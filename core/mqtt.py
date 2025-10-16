@@ -1,5 +1,7 @@
+import asyncio
 import json
 import subprocess
+import threading
 
 import paho.mqtt.client as mqtt
 
@@ -22,7 +24,7 @@ def on_connect(client, userdata, flags, rc):
         print("🔌 MQTT connected successfully!")
         mqtt_send_discovery()
         client.subscribe("billy/command")
-        client.subscribe("billy/say")
+        client.subscribe("billy/say")  # single endpoint
     else:
         print(f"⚠️ MQTT connection failed with code {rc}")
 
@@ -82,18 +84,20 @@ def mqtt_send_discovery():
     if not mqtt_client:
         return
 
+    device = {
+        "identifiers": ["billy_bass"],
+        "name": "Big Mouth Billy Bass",
+        "model": "Billy Bassistant",
+        "manufacturer": "Thom Koopman",
+    }
+
     # Sensor for Billy's state
     payload_sensor = {
         "name": "Billy State",
         "unique_id": "billy_state",
         "state_topic": "billy/state",
         "icon": "mdi:fish",
-        "device": {
-            "identifiers": ["billy_bass"],
-            "name": "Big Mouth Billy Bass",
-            "model": "Billy Bassistant",
-            "manufacturer": "Thom Koopman",
-        },
+        "device": device,
     }
     mqtt_client.publish(
         "homeassistant/sensor/billy/state/config",
@@ -107,12 +111,7 @@ def mqtt_send_discovery():
         "unique_id": "billy_shutdown",
         "command_topic": "billy/command",
         "payload_press": "shutdown",
-        "device": {
-            "identifiers": ["billy_bass"],
-            "name": "Big Mouth Billy Bass",
-            "model": "Billy Bassistant",
-            "manufacturer": "Thom Koopman",
-        },
+        "device": device,
     }
     mqtt_client.publish(
         "homeassistant/button/billy/shutdown/config",
@@ -120,24 +119,80 @@ def mqtt_send_discovery():
         retain=True,
     )
 
+    # Single text entity
     payload_text_input = {
         "name": "Billy Say",
         "unique_id": "billy_say",
         "command_topic": "billy/say",
         "mode": "text",
         "max": 255,
-        "device": {
-            "identifiers": ["billy_bass"],
-            "name": "Big Mouth Billy Bass",
-            "model": "Billy Bassistant",
-            "manufacturer": "Thom Koopman",
-        },
+        "device": device,
     }
     mqtt_client.publish(
         "homeassistant/text/billy/say/config",
         json.dumps(payload_text_input),
         retain=True,
     )
+
+
+# ----- Helpers ----------------------------------------------------------
+
+FORCE_OFF_TAGS = ("[[nochat]]", "[[announce-only]]", "[[one-shot]]", "[[no-follow-up]]")
+FORCE_ON_TAGS = ("[[chat]]", "[[follow-up]]")
+
+
+def _parse_say_payload(raw: str):
+    """
+    Accept raw text or JSON: {"text":"...", "interactive": true/false}
+    Plus inline flags inside text:
+      [[nochat]] / [[announce-only]] / [[one-shot]] / [[no-follow-up]] -> interactive=False
+      [[chat]] / [[follow-up]] -> interactive=True
+    Returns (clean_text, interactive: None|True|False)
+    """
+    s = raw.strip()
+    interactive = None
+    text = s
+
+    # JSON override (still single endpoint; optional for power-users)
+    try:
+        data = json.loads(s)
+        if isinstance(data, dict):
+            text = str(data.get("text", "")).strip()
+            if "interactive" in data:
+                interactive = bool(data["interactive"])
+    except json.JSONDecodeError:
+        pass
+
+    low = text.lower()
+
+    # Inline flags take precedence over JSON 'interactive'
+    for tag in FORCE_OFF_TAGS:
+        if tag in low:
+            interactive = False
+            text = re_sub_ignorecase(text, tag, "")
+
+    for tag in FORCE_ON_TAGS:
+        if tag in low:
+            interactive = True
+            text = re_sub_ignorecase(text, tag, "")
+
+    return text.strip(), interactive
+
+
+def re_sub_ignorecase(s: str, find: str, repl: str) -> str:
+    import re
+
+    return re.sub(re.escape(find), repl, s, flags=re.IGNORECASE)
+
+
+def _run_async(coro):
+    def _runner():
+        asyncio.run(coro)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
+# -----------------------------------------------------------------------
 
 
 def on_message(client, userdata, msg):
@@ -152,20 +207,23 @@ def on_message(client, userdata, msg):
                 print(f"\n⚠️ Error stopping motors: {e}")
             stop_mqtt()
             subprocess.Popen(["sudo", "shutdown", "now"])
-    elif msg.topic == "billy/say":
+        return
+
+    if msg.topic == "billy/say":
         print(f"📩 Received SAY command: {msg.payload.decode()}")
 
         import asyncio
         import threading
 
-        from core.say import say
+        # 🔁 Lazy import here to avoid circular import with session.py
+        from .say import say
 
         try:
             text = msg.payload.decode().strip()
             if text:
 
                 def run_say():
-                    asyncio.run(say(text=text))
+                    asyncio.run(say(text=text))  # interactive=None -> AUTO follow-up
 
                 threading.Thread(target=run_say, daemon=True).start()
             else:

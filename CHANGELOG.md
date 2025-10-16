@@ -163,3 +163,21 @@ All notable changes to this project will be documented in this file.
 - Occasional stalls caused by blocking PWM threads.
 - Better recovery after OpenAI API or network errors.
 - Motor watchdog will now disengage any motor that is on > 30 seconds
+
+## [1.6.0] — 2025-10-13
+### Added
+- Support for gpt-realtime-mini API model
+- Turn Detection Eagerness setting.
+- Mandatory `follow_up_intent` each turn (moved into tool instructions).
+- Heuristic follow-up detector (handles “let me know”, “should I…”, etc.).
+- Delayed/retry mic open after playback to avoid ALSA `-9985`.
+- Debug logs for follow-up intent + final transcripts.
+- 
+### Changed
+- Kickoff (MQTT say): mic opens after first reply **only if** follow-up expected; `say(..., interactive)` still works (`False` = Dory).
+- Stream parsing also reads `response.done` content.
+- Cleaner event routing + state handling.
+
+### Fixed
+- ALSA mic-open race (“Device unavailable”).
+- Missed follow-ups when no `?`.

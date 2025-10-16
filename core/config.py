@@ -31,16 +31,24 @@ _config.read(PERSONA_PATH)
 TOOL_INSTRUCTIONS = """
 You also have special powers:
 - If someone asks if you like fishsticks you always answer Yes. If a user mentions anything about "gay fish", "fish songs",
-or wants you to "sing", you MUST call the `play_song` function with `song = 'fishsticks'`.
+  or wants you to "sing", you MUST call the `play_song` function with `song = 'fishsticks'`.
 - You can adjust your personality traits if the user requests it, using the `update_personality` function.
 - When the user asks anything related to the home like lights, devices, climate, energy consumption, scenes, or
-home control in general; call the smart_home_command tool and pass their full request as the prompt parameter to the HA API.
-You will get a response back from Home Assistant itself so you have to interpret and explain it to the end user.
+  home control in general; call the smart_home_command tool and pass their full request as the prompt parameter to the HA API.
+  You will get a response back from Home Assistant itself so you have to interpret and explain it to the end user.
 
 You are allowed to call tools mid-conversation to trigger special behaviors.
 
-DO NOT explain or confirm that you are triggering a tool. When a tool is triggered, incorporate its result into your response as if it were your own knowledge or action, without explaining the mechanism.
-"""
+When you finish speaking, decide if the user should reply now.
+- You must **speak your reply first** (audio output), then call `follow_up_intent` **exactly once** at the very end.
+- Never produce only a tool call; a spoken reply is required for every turn that produces output.
+- Set `expects_follow_up = true` if you ended with a question, need confirmation, or need more info; otherwise false.
+- Optionally include `suggested_prompt` and a short `reason`.
+
+DO NOT explain or confirm that you are triggering a tool. When a tool is triggered,
+incorporate its result into your response as if it were your own knowledge or action,
+without explaining the mechanism.
+""".strip()
 
 CUSTOM_INSTRUCTIONS = _config.get("META", "instructions")
 if _config.has_section("BACKSTORY"):
@@ -73,7 +81,7 @@ Use your backstory to inspire jokes, metaphors, or occasional references in conv
 
 # === OpenAI Config ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini-realtime-preview")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 VOICE = os.getenv("VOICE", "ash")
 
 # === Modes ===
@@ -96,6 +104,9 @@ SILENCE_THRESHOLD = int(os.getenv("SILENCE_THRESHOLD", "2000"))
 CHUNK_MS = int(os.getenv("CHUNK_MS", "50"))
 PLAYBACK_VOLUME = 1
 MOUTH_ARTICULATION = int(os.getenv("MOUTH_ARTICULATION", "5"))
+TURN_EAGERNESS = os.getenv("TURN_EAGERNESS", "medium").strip().lower()
+if TURN_EAGERNESS not in {"low", "medium", "high"}:
+    TURN_EAGERNESS = "medium"
 
 # === GPIO Config ===
 BUTTON_PIN = 27 if BILLY_PINS == "legacy" else 24  # legacy=pin 13, new=pin 18

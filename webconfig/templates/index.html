@@ -296,6 +296,7 @@
                                 <strong>gpt-4o-mini-realtime-preview</strong> is cheaper and the default.<br>
                                 <strong>gpt-realtime</strong> is higher performance but also more expensive in token usage (~ ×6.66 compared to mini).
                                 <br><br>
+                                <strong>gpt-realtime-mini</strong> same cost as the mini preview.<br>
                                 <strong>gpt-4o-realtime-preview</strong> is deprecated (and most expensive).<br><br>
                                 See <a href="https://openai.com/api/pricing/" target="_blank" class="underline hover:text-cyan-400">OpenAI Realtime API Pricing</a> for details .
                             </div>
@@ -311,6 +312,11 @@
                                         {% if config.get(
                                 'OPENAI_MODEL') == 'gpt-realtime' %}selected{% endif %}>
                                 gpt-realtime (better but more expensive)
+                                </option>
+                                <option value="gpt-realtime-mini"
+                                        {% if config.get(
+                                'OPENAI_MODEL') == 'gpt-realtime-mini' %}selected{% endif %}>
+                                gpt-realtime-mini
                                 </option>
                                 <option value="gpt-4o-realtime-preview" disabled
                                         {% if config.get(
@@ -391,6 +397,31 @@
                             </option>
                             {% endfor %}
                         </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="TURN_EAGERNESS"
+                               class="flex justify-between items-center font-semibold text-sm text-slate-300 relative">
+                            Turn Detection Eagerness
+                            <span class="material-icons align-middle hover:text-cyan-400 cursor-pointer ml-1"
+                                  onclick="toggleTooltip(this)">help_outline</span>
+                        </label>
+
+                        <div class="relative">
+                            <div data-tooltip>
+                                How quickly Billy should respond to you. If Billy cuts in too often, set low. If he feels sluggish, set high. <br/>
+                                <b>Low</b> = patient (waits longer)<br/>
+                                <b>Medium</b> = balanced<br/>
+                                <b>High</b> = snappy (may interrupt sooner)
+                            </div>
+
+                            <select id="TURN_EAGERNESS" name="TURN_EAGERNESS"
+                                    class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                                <option value="low" {% if config.get('TURN_EAGERNESS', 'medium') == 'low' %}selected{% endif %}>Low (patient)</option>
+                                <option value="medium" {% if config.get('TURN_EAGERNESS', 'medium') == 'medium' %}selected{% endif %}>Medium (balanced)</option>
+                                <option value="high" {% if config.get('TURN_EAGERNESS', 'medium') == 'high' %}selected{% endif %}>High (snappy)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -499,8 +530,8 @@
                             </label>
                             <div class="relative">
                                 <div data-tooltip>
-                                    How many seconds of silence Billy should wait after you stop talking before ending your turn.
-                                    Lower = quicker response, higher = more forgiving.
+                                    How many seconds of silence Billy should wait before he ends the conversation.<br/>
+                                    Lower = ends quicker, higher = more forgiving.
                                 </div>
                                 <input type="number"
                                        class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"

@@ -60,6 +60,7 @@ CONFIG_KEYS = [
     "FLASK_PORT",
     "RUN_MODE",
     "SHOW_SUPPORT",
+    "TURN_EAGERNESS",
 ]
 ALLOW_RC_TAGS = os.getenv("ALLOW_RC_TAGS", "false").lower() == "true"
 WEBCONFIG_DIR = os.path.abspath(os.path.dirname(__file__))

@@ -2,7 +2,6 @@ import asyncio
 import base64
 import json
 import os
-import re
 import socket
 import time
 from typing import Any
@@ -24,6 +23,7 @@ from .config import (
     RUN_MODE,
     SILENCE_THRESHOLD,
     TEXT_ONLY_MODE,
+    TURN_EAGERNESS,
     VOICE,
 )
 from .ha import send_conversation_prompt
@@ -71,11 +71,33 @@ TOOLS = [
             "required": ["prompt"],
         },
     },
+    {
+        "name": "follow_up_intent",
+        "type": "function",
+        "description": "Call at the end of your turn to indicate if you expect a user reply now.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expects_follow_up": {"type": "boolean"},
+                "suggested_prompt": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["expects_follow_up"],
+        },
+    },
 ]
 
 
 class BillySession:
-    def __init__(self, interrupt_event=None):
+    def __init__(
+        self,
+        interrupt_event=None,
+        *,
+        kickoff_text: str | None = None,
+        kickoff_kind: str = "literal",  # "literal" | "prompt" | "raw"
+        kickoff_to_interactive: bool = False,  # immediately open-mic after kickoff
+        autofollowup: str = "auto",  # "auto" | "never" | "always"
+    ):
         self.ws = None
         self.ws_lock: asyncio.Lock = asyncio.Lock()
         self.loop = None
@@ -90,12 +112,143 @@ class BillySession:
         self.allow_mic_input = True
         self.interrupt_event = interrupt_event or asyncio.Event()
         self.mic = MicManager()
+        self.mic_running = False
         self.mic_timeout_task: asyncio.Task | None = None
 
-        # Track whenever a session is updated after creation, and OpenAI is ready to
-        # receive voice.
+        # Track whenever a session is updated after creation, and OpenAI is ready to receive voice.
         self.session_initialized = False
         self.run_mode = RUN_MODE
+
+        # Kickoff (MQTT say)
+        self.kickoff_text = (kickoff_text or "").strip() or None
+        self.kickoff_kind = kickoff_kind
+        self.kickoff_to_interactive = kickoff_to_interactive
+        self.kickoff_first_turn_done = False
+
+        # Follow-up
+        self.autofollowup = autofollowup  # "auto" | "never" | "always"
+        self.follow_up_expected = False
+        self.follow_up_prompt: str | None = None
+
+        # Tool args buffer (for streamed args)
+        self._tool_args_buffer: dict[str, str] = {}
+
+        # Turn-level flags for follow-up detection
+        self._saw_transcript_delta = False
+        self._turn_had_speech = False
+        self._active_transcript_stream: str | None = None  # "audio" | "text"
+        self._added_done_text = False
+
+    # ---- Mic helpers -------------------------------------------------
+    def _start_mic(self, *, retry=True):
+        """
+        Try to open the mic. If it fails (device busy/unavailable), optionally
+        start a background retry loop with exponential backoff.
+        """
+        if self.mic_running or not self.session_active.is_set():
+            return
+
+        try:
+            # Recreate the manager in case the previous stream left it in a bad state
+            if self.mic is None:
+                self.mic = MicManager()
+
+            self.mic.start(self.mic_callback)
+            self.mic_running = True
+            if DEBUG_MODE:
+                print("🎤 Mic started")
+            if not self.mic_timeout_task or self.mic_timeout_task.done():
+                self.mic_timeout_task = asyncio.create_task(self.mic_timeout_checker())
+
+        except Exception as e:
+            self.mic_running = False
+            print(f"❌ Mic start failed: {e}")
+            if retry and self.session_active.is_set():
+                # Kick off a retry loop (non-blocking)
+                asyncio.create_task(self._retry_mic_loop())
+
+    def _stop_mic(self):
+        if self.mic_running:
+            try:
+                self.mic.stop()
+            except Exception as e:
+                print(f"⚠️ Error while stopping mic: {e}")
+            self.mic_running = False
+
+    async def _retry_mic_loop(self):
+        """
+        Retry opening the mic a few times with backoff. Keeps the session alive
+        while we wait for the input device to become available again.
+        """
+        if DEBUG_MODE:
+            print("🔁 Mic retry loop started")
+
+        # Small, bounded backoff: 0.5s → 1s → 2s → 2s → …
+        delays = [0.5, 1.0, 2.0, 2.0, 2.0]
+        for delay in delays:
+            if not self.session_active.is_set():
+                return
+
+            await asyncio.sleep(delay)
+
+            # Recreate MicManager to clear any stale PortAudio handles
+            try:
+                self.mic = MicManager()
+            except Exception as e:
+                if DEBUG_MODE:
+                    print(f"⚠️ MicManager recreate failed: {e}")
+
+            try:
+                self.mic.start(self.mic_callback)
+                self.mic_running = True
+                if DEBUG_MODE:
+                    print("✅ Mic started after retry")
+                if not self.mic_timeout_task or self.mic_timeout_task.done():
+                    self.mic_timeout_task = asyncio.create_task(
+                        self.mic_timeout_checker()
+                    )
+                mqtt_publish("billy/state", "listening")
+                return
+            except Exception as e:
+                self.mic_running = False
+                print(f"❌ Mic retry failed: {e}")
+
+        # All retries exhausted
+        print("🛑 Mic unavailable after retries; keeping session but not listening.")
+
+    # ------------------------------------------------------------------
+
+    def _wants_follow_up_heuristic(self) -> bool:
+        """
+        Minimal, language-agnostic check: treat any question punctuation
+        as an invitation to follow up.
+        """
+        txt = (self.full_response_text or "").strip()
+        # Latin '?', Spanish '¿', CJK full-width '？', Arabic '؟', interrobang '‽'
+        return any(ch in txt for ch in ("?", "¿", "？", "؟", "‽"))
+
+    async def _start_mic_after_playback(
+        self, delay: float = 0.6, retries: int = 3
+    ) -> bool:
+        """
+        Open the mic a tad later (and retry) so ALSA has released devices.
+        """
+        for attempt in range(1, retries + 1):
+            try:
+                await asyncio.sleep(delay if attempt > 1 else 0.0)
+                if not self.mic_running:
+                    self.mic.start(self.mic_callback)  # may raise
+                    self.mic_running = True
+                    if not self.mic_timeout_task or self.mic_timeout_task.done():
+                        self.mic_timeout_task = asyncio.create_task(
+                            self.mic_timeout_checker()
+                        )
+                print(f"🎙️ Mic opened (attempt {attempt}).")
+                return True
+            except Exception as e:
+                print(f"⚠️ Mic open failed (attempt {attempt}/{retries}): {e}")
+        print("🛑 Mic failed to open after retries.")
+        return False
 
     async def start(self):
         self.loop = asyncio.get_running_loop()
@@ -115,7 +268,6 @@ class BillySession:
                 uri = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
                 headers = {
                     "Authorization": f"Bearer {OPENAI_API_KEY}",
-                    "openai-beta": "realtime=v1",
                 }
 
                 try:
@@ -126,18 +278,66 @@ class BillySession:
                         json.dumps({
                             "type": "session.update",
                             "session": {
-                                "voice": VOICE,
-                                "modalities": ["text"]
-                                if TEXT_ONLY_MODE
-                                else ["audio", "text"],
-                                "input_audio_format": "pcm16",
-                                "output_audio_format": "pcm16",
-                                "turn_detection": {"type": "server_vad"},
+                                "type": "realtime",
                                 "instructions": INSTRUCTIONS,
                                 "tools": TOOLS,
+                                "audio": {
+                                    "input": {
+                                        "format": {"type": "audio/pcm", "rate": 24000},
+                                        "turn_detection": {
+                                            "type": "semantic_vad",
+                                            "eagerness": TURN_EAGERNESS,
+                                            "create_response": True,
+                                            "interrupt_response": True,
+                                        },
+                                    },
+                                    **(
+                                        {
+                                            "output": {
+                                                "format": {
+                                                    "type": "audio/pcm",
+                                                    "rate": 24000,
+                                                },
+                                                "voice": VOICE,
+                                            }
+                                        }
+                                        if not TEXT_ONLY_MODE
+                                        else {}
+                                    ),
+                                },
                             },
                         })
                     )
+
+                    # Kickoff message (from MQTT say)
+                    if self.kickoff_text:
+                        if self.kickoff_kind == "prompt":
+                            kickoff_payload = self.kickoff_text
+                        elif self.kickoff_kind == "literal":
+                            kickoff_payload = (
+                                "Say the user's message **verbatim**, word for word, with no additions or reinterpretation.\n"
+                                "Maintain personality, but do NOT rephrase or expand.\n\n"
+                                f"Repeat this literal message sent via MQTT: {self.kickoff_text}"
+                                "\n\n"
+                                "After you finish speaking, call `follow_up_intent` once. "
+                                "If the line is not a question and needs no reply, set expects_follow_up=false."
+                            )
+                        else:
+                            kickoff_payload = self.kickoff_text
+
+                        await self.ws.send(
+                            json.dumps({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "input_text", "text": kickoff_payload}
+                                    ],
+                                },
+                            })
+                        )
+                        await self.ws.send(json.dumps({"type": "response.create"}))
 
                 except websockets.exceptions.ConnectionClosedError as e:
                     reason = getattr(e, "reason", str(e))
@@ -183,16 +383,19 @@ class BillySession:
         if not TEXT_ONLY_MODE and audio.playback_done_event.is_set():
             await asyncio.to_thread(audio.playback_done_event.wait)
 
-        print("🎙️ Mic stream active. Say something...")
-        mqtt_publish("billy/state", "listening")
-
-        # Ensure we hold a reference to the mic checker task, or it may be destroyed.
-        self.mic_timeout_task: asyncio.Task = asyncio.create_task(
-            self.mic_timeout_checker()
+        print(
+            "🎙️ Mic stream active. Say something..."
+            if not self.kickoff_text
+            else "📣 Announcing kickoff..."
+        )
+        mqtt_publish(
+            "billy/state", "listening" if not self.kickoff_text else "speaking"
         )
 
         try:
-            self.mic.start(self.mic_callback)
+            # Start mic immediately only for non-kickoff sessions
+            if not self.kickoff_text:
+                self._start_mic()
 
             async for message in self.ws:
                 if not self.session_active.is_set():
@@ -201,13 +404,11 @@ class BillySession:
                 data = json.loads(message)
                 if DEBUG_MODE and (
                     DEBUG_MODE_INCLUDE_DELTA
-                    or not data.get('type', "").endswith('delta')
+                    or not (data.get("type") or "").endswith("delta")
                 ):
                     print(f"\n🔁 Raw message: {data} ")
 
-                # If the session has been updated properly, flag it as so. We can't
-                # send audio until the session is fully initialized.
-                if data.get('type', "") == 'session_updated':
+                if data.get("type") in ("session.updated", "session_updated"):
                     self.session_initialized = True
 
                 await self.handle_message(data)
@@ -218,7 +419,7 @@ class BillySession:
 
         finally:
             try:
-                self.mic.stop()
+                self._stop_mic()
                 print("🎙️ Mic stream closed.")
             except Exception as e:
                 print(f"⚠️ Error while stopping mic: {e}")
@@ -229,21 +430,57 @@ class BillySession:
                 print(f"⚠️ Error in post_response_handling: {e}")
 
     async def handle_message(self, data):
-        # If this speech segment is done, add some newlines to the full response text,
-        # so it's clearer in logging.
-        if data['type'] == 'response.audio_transcript.done':
-            self.full_response_text += "\n\n"
+        t = data.get("type") or ""  # safe: no KeyError
 
-        if not TEXT_ONLY_MODE and data["type"] in (
-            "response.audio",
-            "response.audio.delta",
-        ):
-            if not self.committed and self.session_initialized:
-                async with self.ws_lock:
-                    await self.ws.send(
-                        json.dumps({"type": "input_audio_buffer.commit"})
-                    )
-                self.committed = True
+        # --- quick type groups for readability ---
+        AUDIO_OUT = {
+            "response.output_audio",
+            "response.output_audio.delta",
+        }
+        TRANSCRIPT_DELTAS = {
+            "response.output_audio_transcript.delta",
+            "response.audio_transcript.delta",
+            "response.text.delta",
+        }
+        TRANSCRIPT_DONE = {
+            "response.output_audio_transcript.done",
+            "response.audio_transcript.done",
+            "response.text.done",
+        }
+
+        # New response → reset per-turn flags & follow-up signal
+        if t == "response.created":
+            self._saw_transcript_delta = False
+            self._turn_had_speech = False
+            self.follow_up_expected = False
+            self.follow_up_prompt = None
+            self._active_transcript_stream = None
+            self._added_done_text = False
+
+        # Reset client-side state when server VAD says a new utterance starts
+        elif t == "input_audio_buffer.speech_started":
+            self.committed = False
+
+        elif t == "input_audio_buffer.speech_stopped":
+            pass  # server auto-commits when create_response=True
+
+        elif t in TRANSCRIPT_DONE:
+            # Only use *.done text if no deltas arrived for this turn (prevents duplication)
+            transcript = data.get("transcript") or data.get("text") or ""
+            if (
+                transcript
+                and not self._saw_transcript_delta
+                and not self._added_done_text
+            ):
+                self.full_response_text += transcript
+                self._added_done_text = True
+            self.full_response_text += "\n\n"
+            if DEBUG_MODE:
+                print(f"\n📝 transcript(done): {transcript!r}")
+
+        # === Audio output ===
+        elif not TEXT_ONLY_MODE and t in AUDIO_OUT:
+            self._turn_had_speech = True
             audio_b64 = data.get("audio") or data.get("delta")
             if audio_b64:
                 audio_chunk = base64.b64decode(audio_b64)
@@ -259,27 +496,78 @@ class BillySession:
                             audio.playback_queue.task_done()
                         except Exception:
                             break
-
                     self.session_active.clear()
                     self.interrupt_event.clear()
                     return
 
-        if (
-            data["type"] in ("response.audio_transcript.delta", "response.text.delta")
-            and "delta" in data
-        ):
+        elif t == "input_audio_buffer.committed":
+            self.committed = True
+
+        # === Transcript deltas (GA + compat) ===
+        elif t in TRANSCRIPT_DELTAS and "delta" in data:
+            # Choose a single transcript stream per turn to avoid duplicates
+            if t.startswith("response.output_audio_transcript") or t.startswith(
+                "response.audio_transcript"
+            ):
+                stream = "audio"
+            else:
+                stream = "text"
+            if self._active_transcript_stream is None:
+                self._active_transcript_stream = stream
+            elif stream != self._active_transcript_stream:
+                # Ignore duplicate transcript channel this turn
+                return
+            self._turn_had_speech = True
+            self._saw_transcript_delta = True
             self.allow_mic_input = False
             if self.first_text:
                 mqtt_publish("billy/state", "speaking")
-                print("\n🐟 Billy: ", end='', flush=True)
+                print("\n🐟 Billy: ", end="", flush=True)
                 self.first_text = False
                 self.user_spoke_after_assistant = False
-            print(data["delta"], end='', flush=True)
+            print(data["delta"], end="", flush=True)
             self.full_response_text += data["delta"]
 
-        if data["type"] == "response.function_call_arguments.done":
-            if data.get("name") == "update_personality":
-                args = json.loads(data["arguments"])
+        # === Tool args streaming (optional but handy) ===
+        elif t == "response.function_call_arguments.delta":
+            name = data.get("name")
+            if name:
+                self._tool_args_buffer.setdefault(name, "")
+                self._tool_args_buffer[name] += data.get("arguments", "")
+            return
+
+        # === Tool calls (final) ===
+        elif t == "response.function_call_arguments.done":
+            name = data.get("name")
+            raw_args = data.get("arguments")
+            if not raw_args:
+                raw_args = self._tool_args_buffer.pop(name, "{}")
+
+            if name == "follow_up_intent":
+                raw_args = raw_args or "{}"
+                try:
+                    args = json.loads(raw_args)
+                except Exception as e:
+                    print(
+                        f"\n⚠️ follow_up_intent: failed to parse arguments: {e} | raw={raw_args!r}"
+                    )
+                    args = {}
+
+                self.follow_up_expected = bool(args.get("expects_follow_up", False))
+                self.follow_up_prompt = args.get("suggested_prompt") or None
+                reason = args.get("reason")
+
+                if DEBUG_MODE:
+                    print(
+                        "\n🧭 follow_up_intent"
+                        f" | expects_follow_up={self.follow_up_expected}"
+                        f" | suggested_prompt={self.follow_up_prompt!r}"
+                        f" | reason={reason!r}"
+                    )
+                return
+
+            if name == "update_personality":
+                args = json.loads(raw_args or "{}")
                 changes = []
                 for trait, val in args.items():
                     if hasattr(PERSONALITY, trait) and isinstance(val, int):
@@ -318,8 +606,8 @@ class BillySession:
                         )
                         await self.ws.send(json.dumps({"type": "response.create"}))
 
-            elif data.get("name") == "play_song":
-                args = json.loads(data["arguments"])
+            elif name == "play_song":
+                args = json.loads(raw_args or "{}")
                 song_name = args.get("song")
                 if song_name:
                     print(f"\n🎵 Assistant requested to play song: {song_name} ")
@@ -328,15 +616,12 @@ class BillySession:
                     await audio.play_song(song_name)
                     return
 
-            elif data.get("name") == "smart_home_command":
-                args = json.loads(data["arguments"])
+            elif name == "smart_home_command":
+                args = json.loads(raw_args or "{}")
                 prompt = args.get("prompt")
-
                 if prompt:
                     print(f"\n🏠 Sending to Home Assistant Conversation API: {prompt} ")
-
                     ha_response = await send_conversation_prompt(prompt)
-                    # Try to extract plain speech text
                     speech_text = None
                     if isinstance(ha_response, dict):
                         speech_text = (
@@ -382,7 +667,8 @@ class BillySession:
                             )
                             await self.ws.send(json.dumps({"type": "response.create"}))
 
-        elif data["type"] == "response.done":
+        # === Turn done / errors ===
+        elif t == "response.done":
             error = data.get("status_details", {}).get("error")
             if error:
                 error_type = error.get("type")
@@ -393,44 +679,67 @@ class BillySession:
 
             if not TEXT_ONLY_MODE:
                 await asyncio.to_thread(audio.playback_queue.join)
-
-                # Let the last audio chunk finish playing
                 await asyncio.sleep(1)
-
                 if len(self.audio_buffer) > 0:
                     print(f"💾 Saving audio buffer ({len(self.audio_buffer)} bytes)")
                     audio.rotate_and_save_response_audio(self.audio_buffer)
                 else:
                     print("⚠️ Audio buffer was empty, skipping save.")
-
                 self.audio_buffer.clear()
                 audio.playback_done_event.set()
                 self.last_activity[0] = time.time()
-
-                # Allow mic input only after a short delay
                 self.allow_mic_input = True
+
+            # Kickoff follow-up switch
+            if self.kickoff_text and not self.kickoff_first_turn_done:
+                # Only mark kickoff done if this turn actually had speech
+                if self._turn_had_speech:
+                    self.kickoff_first_turn_done = True
+                    if self.kickoff_to_interactive:
+                        print("🔁 Kickoff complete — switching to interactive mode.")
+                        self._start_mic()
+                        mqtt_publish("billy/state", "listening")
+                    elif self.autofollowup == "auto":
+                        # use robust heuristic (not just trailing '?')
+                        asked_question = self._wants_follow_up_heuristic()
+                        wants_follow_up = self.follow_up_expected or asked_question
+                        if wants_follow_up:
+                            print("🔁 Auto follow-up detected — opening mic.")
+                            await self._start_mic_after_playback()
+                            mqtt_publish("billy/state", "listening")
+                            self.user_spoke_after_assistant = False
+                            self.last_activity[0] = time.time()
+                else:
+                    if DEBUG_MODE:
+                        print(
+                            "ℹ️ Kickoff turn ended with no speech (tool-only). Waiting for next turn."
+                        )
 
             if self.run_mode == "dory":
                 print("🎣 Dory mode active. Ending session after single response.")
                 await self.stop_session()
                 return
 
-        elif data["type"] == "error":
+        elif t == "error":
             error: dict[str, Any] = data.get("error") or {}
             code = error.get("code", "error").lower()
             message = error.get("message", "Unknown error")
-
             code = "noapikey" if "invalid_api_key" in code else "error"
-
             print(f"\n🛑 API Error ({code}): {message}")
             await self._play_error_sound(code, message)
             return
+
+        # else: ignore unrecognized messages silently
 
     async def mic_timeout_checker(self):
         print("🛡️ Mic timeout checker active")
         last_tail_move = 0
 
         while self.session_active.is_set():
+            if not self.mic_running:
+                await asyncio.sleep(0.2)
+                continue
+
             now = time.time()
             idle_seconds = now - max(self.last_activity[0], audio.last_played_time)
             timeout_offset = 2
@@ -440,11 +749,11 @@ class BillySession:
                 progress = min(elapsed / MIC_TIMEOUT_SECONDS, 1.0)
                 bar_len = 20
                 filled = int(bar_len * progress)
-                bar = '█' * filled + '-' * (bar_len - filled)
+                bar = "█" * filled + "-" * (bar_len - filled)
                 print(
                     f"\r👂 {MIC_TIMEOUT_SECONDS}s timeout: [{bar}] {elapsed:.1f}s "
                     f"| Mic Volume:: {self.last_rms:.4f} / Threshold: {SILENCE_THRESHOLD:.4f}",
-                    end='',
+                    end="",
                     flush=True,
                 )
 
@@ -475,17 +784,39 @@ class BillySession:
                     self.ws = None
             return
 
-        if not self.run_mode and (
-            re.search(r"[a-zA-Z]\?\s*$", self.full_response_text.strip())
-            and self.user_spoke_after_assistant
-        ):
-            print("🔁 Follow-up detected. Restarting...\n")
-            await self.start()
+        # Heuristic fallback
+        # Heuristic fallback (punctuation only)
+        asked_question = self._wants_follow_up_heuristic()
+        if DEBUG_MODE:
+            print(
+                "🧪 follow-up decision"
+                f" | mode={self.autofollowup}"
+                f" | tool_expects={self.follow_up_expected}"
+                f" | qmark={asked_question}"
+                f" | had_speech={self._turn_had_speech}"
+            )
+
+        if self.autofollowup == "always":
+            wants_follow_up = True
+        elif self.autofollowup == "never":
+            wants_follow_up = False
         else:
-            print("🛑 No follow-up. Ending session.")
-            mqtt_publish("billy/state", "idle")
-            stop_all_motors()
-            async with self.ws_lock:
+            wants_follow_up = self.follow_up_expected or asked_question
+
+        if wants_follow_up:
+            print("🔁 Follow-up expected. Keeping session open.")
+            mqtt_publish("billy/state", "listening")
+            await self._start_mic_after_playback()  # <-- changed
+            self.user_spoke_after_assistant = False
+            self.full_response_text = ""
+            self.last_activity[0] = time.time()
+            return
+
+        print("🛑 No follow-up. Ending session.")
+        mqtt_publish("billy/state", "idle")
+        stop_all_motors()
+        async with self.ws_lock:
+            if self.ws:
                 await self.ws.close()
                 await self.ws.wait_closed()
                 self.ws = None
@@ -493,7 +824,7 @@ class BillySession:
     async def stop_session(self):
         print("🛑 Stopping session...")
         self.session_active.clear()
-        self.mic.stop()
+        self._stop_mic()
 
         async with self.ws_lock:
             if self.ws:
