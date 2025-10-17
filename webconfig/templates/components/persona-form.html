@@ -1,0 +1,110 @@
+<!-- Persona Column (consistent with Settings) -->
+<section class="space-y-4 md:space-y-6">
+    <form id="persona-form" class="p-4 md:p-6">
+        <!-- Persona Traits -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+             id="section-persona-traits">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                Persona Traits
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+            <div id="personality-sliders" class="space-y-4">
+                <!-- JS will populate this -->
+            </div>
+        </div>
+
+        <!-- Backstory -->
+
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+             id="section-backstory-instructions">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                Backstory
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+            <div>
+                <div id="backstory-fields" class="space-y-2"></div>
+                <button type="button" onclick="addBackstoryField()"
+                        class="text-sm text-emerald-500 hover:text-emerald-400 mt-2 flex items-center cursor-pointer">
+                    <span class="material-icons align-middle mr-1 ">add_circle_outline</span>
+                    Add Field
+                </button>
+            </div>
+        </div>
+
+        <!-- Meta Instructions -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+             id="section-instructions">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                Additional Instructions
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+            <div>
+                <textarea name="META" id="meta-text" rows="16"
+                          class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          spellcheck="false"></textarea>
+            </div>
+        </div>
+
+        <!-- Wake-up Sounds -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+             id="section-wakeup-sounds">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                Wake-up Sounds
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+
+            <div id="wakeup-sound-list" class="space-y-2">
+
+            </div>
+
+            <button type="button" onclick="addWakeupSound()"
+                    class="text-sm text-emerald-500 hover:text-emerald-400 mt-2 flex items-center cursor-pointer">
+                <span class="material-icons align-middle mr-1">add_circle_outline</span>
+                Add Wake-up Sound
+            </button>
+        </div>
+
+    </form>
+
+    <div class="sticky bottom-0 z-10 p-4">
+        <div class="flex justify-center">
+            <div class="relative inline-block">
+                <!-- Split button -->
+                <div class="flex rounded shadow overflow-hidden border border-emerald-500">
+                    <button
+                            id="save-persona-btn"
+                            class="bg-emerald-500 hover:bg-emerald-400 text-zinc-800 font-semibold py-2 px-4 flex items-center gap-1 focus:outline-none"
+                            type="submit"
+                            form="persona-form"
+                    >
+                        <span class="material-icons align-middle">person</span>
+                        Save Persona
+                    </button>
+                    <button
+                            id="persona-dropdown-btn"
+                            type="button"
+                            class="dropdown-toggle bg-emerald-500 hover:bg-emerald-400 text-zinc-800 px-2 flex items-center"
+                            onclick="toggleDropdown(this)"
+                    >
+                        <span class="material-icons align-middle transition-transform duration-200">expand_more</span>
+                    </button>
+                </div>
+                <!-- Dropdown -->
+                <div
+                        class="dropdown-menu absolute bottom-0  right-0 w-full text-zinc-800 border border-emerald-500 rounded z-20 hidden"
+                >
+                    <button onclick="exportPersona()"
+                            class="w-full flex gap-2 items-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 cursor-pointer">
+                        <span class="material-icons">file_download</span>
+                        Export Persona
+                    </button>
+                    <label class="w-full flex gap-2 items-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 cursor-pointer">
+                        <span class="material-icons">file_upload</span>
+                        <span>Import Persona</span>
+                        <input type="file" accept=".ini" onchange="importPersona(this)" class="hidden"/>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

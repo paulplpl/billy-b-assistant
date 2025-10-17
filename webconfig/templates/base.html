@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>{% block title %}Billy Bassistant{% endblock %}</title>
+    <link href="../static/css/styles.css" rel="stylesheet">
+    <link rel="icon" href="../static/favicon.ico" type="image/x-icon">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="text-white font-sans">
+    {% block header %}{% endblock %}
+
+    {% block main_content %}{% endblock %}
+
+    {% block footer %}
+    <footer class="backdrop-blur-xs fixed bottom-0 p-4 left-0 w-full h-20 shadow-[0_-6px_12px_rgba(0,0,0,0.2)]">
+    </footer>
+    {% endblock %}
+
+    {% block scripts %}
+    <script src="{{ url_for('static', filename='js/marked-min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ui-helpers.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app-config.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/log-panel.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/service-status.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/pin-profile.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/settings-form.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/persona-form.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/wakeup-clips.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/audio-panel.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/motor-panel.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/sections.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/version-release.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/init.js') }}"></script>
+    {% endblock %}
+</body>
+</html>

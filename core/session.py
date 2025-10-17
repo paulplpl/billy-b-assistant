@@ -139,6 +139,279 @@ class BillySession:
         self._active_transcript_stream: str | None = None  # "audio" | "text"
         self._added_done_text = False
 
+    # ---- Websocket helpers ---------------------------------------------
+    async def _ws_send_json(self, payload: dict[str, Any]):
+        """Send a JSON payload over the session websocket with locking.
+
+        This method is a small convenience to avoid repeating the lock and
+        json.dumps boilerplate across the codebase.
+        """
+        async with self.ws_lock:
+            if self.ws is not None:
+                await self.ws.send(json.dumps(payload))
+
+    # ---- Message type constants ----------------------------------------
+    AUDIO_OUT_TYPES = {
+        "response.output_audio",
+        "response.output_audio.delta",
+    }
+    TRANSCRIPT_DELTA_TYPES = {
+        "response.output_audio_transcript.delta",
+        "response.audio_transcript.delta",
+        "response.text.delta",
+    }
+    TRANSCRIPT_DONE_TYPES = {
+        "response.output_audio_transcript.done",
+        "response.audio_transcript.done",
+        "response.text.done",
+    }
+
+    # ---- Private handlers -----------------------------------------------
+    def _on_response_created(self):
+        self._saw_transcript_delta = False
+        self._turn_had_speech = False
+        self.follow_up_expected = False
+        self.follow_up_prompt = None
+        self._active_transcript_stream = None
+        self._added_done_text = False
+        self._saw_follow_up_call = False
+
+    def _on_input_speech_started(self):
+        self.committed = False
+
+    def _on_transcript_done(self, data: dict[str, Any]):
+        transcript = data.get("transcript") or data.get("text") or ""
+        if transcript and not self._saw_transcript_delta and not self._added_done_text:
+            self.full_response_text += transcript
+            self._added_done_text = True
+        self.full_response_text += "\n\n"
+        if DEBUG_MODE:
+            print(f"\n📝 transcript(done): {transcript!r}")
+
+    def _on_audio_out(self, data: dict[str, Any]):
+        if TEXT_ONLY_MODE:
+            return
+        self._turn_had_speech = True
+        audio_b64 = data.get("audio") or data.get("delta")
+        if audio_b64:
+            audio_chunk = base64.b64decode(audio_b64)
+            self.audio_buffer.extend(audio_chunk)
+            self.last_activity[0] = time.time()
+            audio.playback_queue.put(audio_chunk)
+
+            if self.interrupt_event.is_set():
+                print("⛔ Assistant turn interrupted. Stopping response playback.")
+                while not audio.playback_queue.empty():
+                    try:
+                        audio.playback_queue.get_nowait()
+                        audio.playback_queue.task_done()
+                    except Exception:
+                        break
+                self.session_active.clear()
+                self.interrupt_event.clear()
+
+    def _on_transcript_delta(self, t: str, data: dict[str, Any]):
+        # Choose a single transcript stream per turn to avoid duplicates
+        if t.startswith("response.output_audio_transcript") or t.startswith(
+            "response.audio_transcript"
+        ):
+            stream = "audio"
+        else:
+            stream = "text"
+        if self._active_transcript_stream is None:
+            self._active_transcript_stream = stream
+        elif stream != self._active_transcript_stream:
+            return
+        self._turn_had_speech = True
+        self._saw_transcript_delta = True
+        self.allow_mic_input = False
+        if self.first_text:
+            mqtt_publish("billy/state", "speaking")
+            print("\n🐟 Billy: ", end="", flush=True)
+            self.first_text = False
+            self.user_spoke_after_assistant = False
+        print(data.get("delta", ""), end="", flush=True)
+        self.full_response_text += data.get("delta", "")
+
+    def _on_tool_args_delta(self, data: dict[str, Any]):
+        name = data.get("name")
+        if name:
+            self._tool_args_buffer.setdefault(name, "")
+            self._tool_args_buffer[name] += data.get("arguments", "")
+
+    async def _handle_follow_up_intent(self, raw_args: str | None):
+        raw_args = raw_args or "{}"
+        try:
+            args = json.loads(raw_args)
+        except Exception as e:
+            print(
+                f"\n⚠️ follow_up_intent: failed to parse arguments: {e} | raw={raw_args!r}"
+            )
+            args = {}
+
+        self.follow_up_expected = bool(args.get("expects_follow_up", False))
+        self.follow_up_prompt = args.get("suggested_prompt") or None
+        reason = args.get("reason")
+        self._saw_follow_up_call = True
+
+        if DEBUG_MODE:
+            print(
+                "\n🧭 follow_up_intent"
+                f" | expects_follow_up={self.follow_up_expected}"
+                f" | suggested_prompt={self.follow_up_prompt!r}"
+                f" | reason={reason!r}"
+            )
+
+    async def _handle_update_personality(self, raw_args: str | None):
+        args = json.loads(raw_args or "{}")
+        changes = []
+        for trait, val in args.items():
+            if hasattr(PERSONALITY, trait) and isinstance(val, int):
+                setattr(PERSONALITY, trait, val)
+                update_persona_ini(trait, val)
+                changes.append((trait, val))
+        if changes:
+            print("\n🎛️ Personality updated via function_call:")
+            for trait, val in changes:
+                print(f"  - {trait.capitalize()}: {val}%")
+            print("\n🧠 New Instructions:\n")
+            print(PERSONALITY.generate_prompt())
+
+            self.user_spoke_after_assistant = True
+            self.full_response_text = ""
+            self.last_activity[0] = time.time()
+
+            confirmation_text = " ".join([
+                f"Okay, {trait} is now set to {val}%." for trait, val in changes
+            ])
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": confirmation_text}],
+                },
+            })
+            await self._ws_send_json({"type": "response.create"})
+
+    async def _handle_play_song(self, raw_args: str | None):
+        args = json.loads(raw_args or "{}")
+        song_name = args.get("song")
+        if song_name:
+            print(f"\n🎵 Assistant requested to play song: {song_name} ")
+            await self.stop_session()
+            await asyncio.sleep(1.0)
+            await audio.play_song(song_name)
+
+    async def _handle_smart_home_command(self, raw_args: str | None):
+        args = json.loads(raw_args or "{}")
+        prompt = args.get("prompt")
+        if not prompt:
+            return
+        print(f"\n🏠 Sending to Home Assistant Conversation API: {prompt} ")
+        ha_response = await send_conversation_prompt(prompt)
+        speech_text = None
+        if isinstance(ha_response, dict):
+            speech_text = ha_response.get("speech", {}).get("plain", {}).get("speech")
+
+        if speech_text:
+            print(f"🔍 HA debug: {ha_response.get('data')}")
+            ha_message = f"Home Assistant says: {speech_text}"
+            print(f"\n📣 {ha_message}")
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": ha_message}],
+                },
+            })
+            await self._ws_send_json({"type": "response.create"})
+        else:
+            print(f"⚠️ Failed to parse HA response: {ha_response}")
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "Home Assistant didn't understand the request.",
+                        }
+                    ],
+                },
+            })
+            await self._ws_send_json({"type": "response.create"})
+
+    async def _on_tool_args_done(self, data: dict[str, Any]):
+        name = data.get("name")
+        raw_args = data.get("arguments")
+        if not raw_args:
+            raw_args = self._tool_args_buffer.pop(name, "{}")
+
+        if name == "follow_up_intent":
+            await self._handle_follow_up_intent(raw_args)
+            return
+        if name == "update_personality":
+            await self._handle_update_personality(raw_args)
+            return
+        if name == "play_song":
+            await self._handle_play_song(raw_args)
+            return
+        if name == "smart_home_command":
+            await self._handle_smart_home_command(raw_args)
+            return
+
+    async def _on_response_done(self, data: dict[str, Any]):
+        error = data.get("status_details", {}).get("error")
+        if error:
+            error_type = error.get("type")
+            error_message = error.get("message", "Unknown error")
+            print(f"\n❌ OpenAI API Error [{error_type}]: {error_message}")
+        else:
+            print("\n✿ Assistant response complete.")
+
+        if not TEXT_ONLY_MODE:
+            await asyncio.to_thread(audio.playback_queue.join)
+            await asyncio.sleep(1)
+            if len(self.audio_buffer) > 0:
+                print(f"💾 Saving audio buffer ({len(self.audio_buffer)} bytes)")
+                audio.rotate_and_save_response_audio(self.audio_buffer)
+            else:
+                print("⚠️ Audio buffer was empty, skipping save.")
+            self.audio_buffer.clear()
+            audio.playback_done_event.set()
+            self.last_activity[0] = time.time()
+            self.allow_mic_input = True
+
+        # Kickoff follow-up switch
+        if self.kickoff_text and not self.kickoff_first_turn_done:
+            if self._turn_had_speech:
+                self.kickoff_first_turn_done = True
+                if self.kickoff_to_interactive:
+                    print("🔁 Kickoff complete — switching to interactive mode.")
+                    self._start_mic()
+                    mqtt_publish("billy/state", "listening")
+                elif self.autofollowup == "auto":
+                    asked_question = self._wants_follow_up_heuristic()
+                    wants_follow_up = self.follow_up_expected or asked_question
+                    if wants_follow_up:
+                        print("🔁 Auto follow-up detected — opening mic.")
+                        await self._start_mic_after_playback()
+                        mqtt_publish("billy/state", "listening")
+                        self.user_spoke_after_assistant = False
+                        self.last_activity[0] = time.time()
+            else:
+                if DEBUG_MODE:
+                    print(
+                        "ℹ️ Kickoff turn ended with no speech (tool-only). Waiting for next turn."
+                    )
+
+        if self.run_mode == "dory":
+            print("🎣 Dory mode active. Ending session after single response.")
+            await self.stop_session()
+
     # ---- Mic helpers -------------------------------------------------
     def _start_mic(self, *, retry=True):
         """
@@ -430,297 +703,38 @@ class BillySession:
                 print(f"⚠️ Error in post_response_handling: {e}")
 
     async def handle_message(self, data):
-        t = data.get("type") or ""  # safe: no KeyError
+        t = data.get("type") or ""
 
-        # --- quick type groups for readability ---
-        AUDIO_OUT = {
-            "response.output_audio",
-            "response.output_audio.delta",
-        }
-        TRANSCRIPT_DELTAS = {
-            "response.output_audio_transcript.delta",
-            "response.audio_transcript.delta",
-            "response.text.delta",
-        }
-        TRANSCRIPT_DONE = {
-            "response.output_audio_transcript.done",
-            "response.audio_transcript.done",
-            "response.text.done",
-        }
-
-        # New response → reset per-turn flags & follow-up signal
         if t == "response.created":
-            self._saw_transcript_delta = False
-            self._turn_had_speech = False
-            self.follow_up_expected = False
-            self.follow_up_prompt = None
-            self._active_transcript_stream = None
-            self._added_done_text = False
-
-        # Reset client-side state when server VAD says a new utterance starts
-        elif t == "input_audio_buffer.speech_started":
-            self.committed = False
-
-        elif t == "input_audio_buffer.speech_stopped":
-            pass  # server auto-commits when create_response=True
-
-        elif t in TRANSCRIPT_DONE:
-            # Only use *.done text if no deltas arrived for this turn (prevents duplication)
-            transcript = data.get("transcript") or data.get("text") or ""
-            if (
-                transcript
-                and not self._saw_transcript_delta
-                and not self._added_done_text
-            ):
-                self.full_response_text += transcript
-                self._added_done_text = True
-            self.full_response_text += "\n\n"
-            if DEBUG_MODE:
-                print(f"\n📝 transcript(done): {transcript!r}")
-
-        # === Audio output ===
-        elif not TEXT_ONLY_MODE and t in AUDIO_OUT:
-            self._turn_had_speech = True
-            audio_b64 = data.get("audio") or data.get("delta")
-            if audio_b64:
-                audio_chunk = base64.b64decode(audio_b64)
-                self.audio_buffer.extend(audio_chunk)
-                self.last_activity[0] = time.time()
-                audio.playback_queue.put(audio_chunk)
-
-                if self.interrupt_event.is_set():
-                    print("⛔ Assistant turn interrupted. Stopping response playback.")
-                    while not audio.playback_queue.empty():
-                        try:
-                            audio.playback_queue.get_nowait()
-                            audio.playback_queue.task_done()
-                        except Exception:
-                            break
-                    self.session_active.clear()
-                    self.interrupt_event.clear()
-                    return
-
-        elif t == "input_audio_buffer.committed":
-            self.committed = True
-
-        # === Transcript deltas (GA + compat) ===
-        elif t in TRANSCRIPT_DELTAS and "delta" in data:
-            # Choose a single transcript stream per turn to avoid duplicates
-            if t.startswith("response.output_audio_transcript") or t.startswith(
-                "response.audio_transcript"
-            ):
-                stream = "audio"
-            else:
-                stream = "text"
-            if self._active_transcript_stream is None:
-                self._active_transcript_stream = stream
-            elif stream != self._active_transcript_stream:
-                # Ignore duplicate transcript channel this turn
-                return
-            self._turn_had_speech = True
-            self._saw_transcript_delta = True
-            self.allow_mic_input = False
-            if self.first_text:
-                mqtt_publish("billy/state", "speaking")
-                print("\n🐟 Billy: ", end="", flush=True)
-                self.first_text = False
-                self.user_spoke_after_assistant = False
-            print(data["delta"], end="", flush=True)
-            self.full_response_text += data["delta"]
-
-        # === Tool args streaming (optional but handy) ===
-        elif t == "response.function_call_arguments.delta":
-            name = data.get("name")
-            if name:
-                self._tool_args_buffer.setdefault(name, "")
-                self._tool_args_buffer[name] += data.get("arguments", "")
+            self._on_response_created()
             return
-
-        # === Tool calls (final) ===
-        elif t == "response.function_call_arguments.done":
-            name = data.get("name")
-            raw_args = data.get("arguments")
-            if not raw_args:
-                raw_args = self._tool_args_buffer.pop(name, "{}")
-
-            if name == "follow_up_intent":
-                raw_args = raw_args or "{}"
-                try:
-                    args = json.loads(raw_args)
-                except Exception as e:
-                    print(
-                        f"\n⚠️ follow_up_intent: failed to parse arguments: {e} | raw={raw_args!r}"
-                    )
-                    args = {}
-
-                self.follow_up_expected = bool(args.get("expects_follow_up", False))
-                self.follow_up_prompt = args.get("suggested_prompt") or None
-                reason = args.get("reason")
-
-                if DEBUG_MODE:
-                    print(
-                        "\n🧭 follow_up_intent"
-                        f" | expects_follow_up={self.follow_up_expected}"
-                        f" | suggested_prompt={self.follow_up_prompt!r}"
-                        f" | reason={reason!r}"
-                    )
-                return
-
-            if name == "update_personality":
-                args = json.loads(raw_args or "{}")
-                changes = []
-                for trait, val in args.items():
-                    if hasattr(PERSONALITY, trait) and isinstance(val, int):
-                        setattr(PERSONALITY, trait, val)
-                        update_persona_ini(trait, val)
-                        changes.append((trait, val))
-                if changes:
-                    print("\n🎛️ Personality updated via function_call:")
-                    for trait, val in changes:
-                        print(f"  - {trait.capitalize()}: {val}%")
-                    print("\n🧠 New Instructions:\n")
-                    print(PERSONALITY.generate_prompt())
-
-                    self.user_spoke_after_assistant = True
-                    self.full_response_text = ""
-                    self.last_activity[0] = time.time()
-
-                    confirmation_text = " ".join([
-                        f"Okay, {trait} is now set to {val}%." for trait, val in changes
-                    ])
-                    async with self.ws_lock:
-                        await self.ws.send(
-                            json.dumps({
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "message",
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "input_text",
-                                            "text": confirmation_text,
-                                        }
-                                    ],
-                                },
-                            })
-                        )
-                        await self.ws.send(json.dumps({"type": "response.create"}))
-
-            elif name == "play_song":
-                args = json.loads(raw_args or "{}")
-                song_name = args.get("song")
-                if song_name:
-                    print(f"\n🎵 Assistant requested to play song: {song_name} ")
-                    await self.stop_session()
-                    await asyncio.sleep(1.0)
-                    await audio.play_song(song_name)
-                    return
-
-            elif name == "smart_home_command":
-                args = json.loads(raw_args or "{}")
-                prompt = args.get("prompt")
-                if prompt:
-                    print(f"\n🏠 Sending to Home Assistant Conversation API: {prompt} ")
-                    ha_response = await send_conversation_prompt(prompt)
-                    speech_text = None
-                    if isinstance(ha_response, dict):
-                        speech_text = (
-                            ha_response.get("speech", {}).get("plain", {}).get("speech")
-                        )
-
-                    if speech_text:
-                        print(f"🔍 HA debug: {ha_response.get('data')}")
-                        ha_message = f"Home Assistant says: {speech_text}"
-                        print(f"\n📣 {ha_message}")
-
-                        async with self.ws_lock:
-                            await self.ws.send(
-                                json.dumps({
-                                    "type": "conversation.item.create",
-                                    "item": {
-                                        "type": "message",
-                                        "role": "user",
-                                        "content": [
-                                            {"type": "input_text", "text": ha_message}
-                                        ],
-                                    },
-                                })
-                            )
-                            await self.ws.send(json.dumps({"type": "response.create"}))
-                    else:
-                        print(f"⚠️ Failed to parse HA response: {ha_response}")
-                        async with self.ws_lock:
-                            await self.ws.send(
-                                json.dumps({
-                                    "type": "conversation.item.create",
-                                    "item": {
-                                        "type": "message",
-                                        "role": "user",
-                                        "content": [
-                                            {
-                                                "type": "input_text",
-                                                "text": "Home Assistant didn't understand the request.",
-                                            }
-                                        ],
-                                    },
-                                })
-                            )
-                            await self.ws.send(json.dumps({"type": "response.create"}))
-
-        # === Turn done / errors ===
-        elif t == "response.done":
-            error = data.get("status_details", {}).get("error")
-            if error:
-                error_type = error.get("type")
-                error_message = error.get("message", "Unknown error")
-                print(f"\n❌ OpenAI API Error [{error_type}]: {error_message}")
-            else:
-                print("\n✿ Assistant response complete.")
-
-            if not TEXT_ONLY_MODE:
-                await asyncio.to_thread(audio.playback_queue.join)
-                await asyncio.sleep(1)
-                if len(self.audio_buffer) > 0:
-                    print(f"💾 Saving audio buffer ({len(self.audio_buffer)} bytes)")
-                    audio.rotate_and_save_response_audio(self.audio_buffer)
-                else:
-                    print("⚠️ Audio buffer was empty, skipping save.")
-                self.audio_buffer.clear()
-                audio.playback_done_event.set()
-                self.last_activity[0] = time.time()
-                self.allow_mic_input = True
-
-            # Kickoff follow-up switch
-            if self.kickoff_text and not self.kickoff_first_turn_done:
-                # Only mark kickoff done if this turn actually had speech
-                if self._turn_had_speech:
-                    self.kickoff_first_turn_done = True
-                    if self.kickoff_to_interactive:
-                        print("🔁 Kickoff complete — switching to interactive mode.")
-                        self._start_mic()
-                        mqtt_publish("billy/state", "listening")
-                    elif self.autofollowup == "auto":
-                        # use robust heuristic (not just trailing '?')
-                        asked_question = self._wants_follow_up_heuristic()
-                        wants_follow_up = self.follow_up_expected or asked_question
-                        if wants_follow_up:
-                            print("🔁 Auto follow-up detected — opening mic.")
-                            await self._start_mic_after_playback()
-                            mqtt_publish("billy/state", "listening")
-                            self.user_spoke_after_assistant = False
-                            self.last_activity[0] = time.time()
-                else:
-                    if DEBUG_MODE:
-                        print(
-                            "ℹ️ Kickoff turn ended with no speech (tool-only). Waiting for next turn."
-                        )
-
-            if self.run_mode == "dory":
-                print("🎣 Dory mode active. Ending session after single response.")
-                await self.stop_session()
-                return
-
-        elif t == "error":
+        if t == "input_audio_buffer.speech_started":
+            self._on_input_speech_started()
+            return
+        if t == "input_audio_buffer.speech_stopped":
+            return
+        if t in self.TRANSCRIPT_DONE_TYPES:
+            self._on_transcript_done(data)
+            return
+        if t in self.AUDIO_OUT_TYPES:
+            self._on_audio_out(data)
+            return
+        if t == "input_audio_buffer.committed":
+            self.committed = True
+            return
+        if t in self.TRANSCRIPT_DELTA_TYPES and "delta" in data:
+            self._on_transcript_delta(t, data)
+            return
+        if t == "response.function_call_arguments.delta":
+            self._on_tool_args_delta(data)
+            return
+        if t == "response.function_call_arguments.done":
+            await self._on_tool_args_done(data)
+            return
+        if t == "response.done":
+            await self._on_response_done(data)
+            return
+        if t == "error":
             error: dict[str, Any] = data.get("error") or {}
             code = error.get("code", "error").lower()
             message = error.get("message", "Unknown error")
@@ -728,7 +742,6 @@ class BillySession:
             print(f"\n🛑 API Error ({code}): {message}")
             await self._play_error_sound(code, message)
             return
-
         # else: ignore unrecognized messages silently
 
     async def mic_timeout_checker(self):
@@ -784,7 +797,6 @@ class BillySession:
                     self.ws = None
             return
 
-        # Heuristic fallback
         # Heuristic fallback (punctuation only)
         asked_question = self._wants_follow_up_heuristic()
         if DEBUG_MODE:
@@ -802,6 +814,9 @@ class BillySession:
             wants_follow_up = False
         else:
             wants_follow_up = self.follow_up_expected or asked_question
+
+        if DEBUG_MODE and not self._saw_follow_up_call:
+            print("⚠️ follow_up_intent not called this turn; using heuristic instead.")
 
         if wants_follow_up:
             print("🔁 Follow-up expected. Keeping session open.")

@@ -220,6 +220,7 @@ def _interlude_routine():
             time.sleep(random.uniform(0.25, 0.9))
         if random.random() < 0.9:
             move_head("on")
+            print(f"⚠️ Interlude MOVE HEAD ON")
     except Exception as e:
         print(f"⚠️ Interlude error: {e}")
 

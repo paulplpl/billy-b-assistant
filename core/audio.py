@@ -167,14 +167,7 @@ def playback_worker(chunk_ms):
                             next_beat_time += beat_length
 
                         mono = np.frombuffer(audio_chunk, dtype=np.int16)
-                        resampled = resample(
-                            mono, int(len(mono) * 48000 / 24000)
-                        ).astype(np.int16)
-                        stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-                        stereo = np.clip(
-                            stereo * PLAYBACK_VOLUME, -32768, 32767
-                        ).astype(np.int16)
-                        stream.write(stereo)
+                        stream.write(_resample_24k_mono_to_48k_stereo(mono))
 
                     elif mode == "tts":
                         chunk = item[1]
@@ -185,20 +178,14 @@ def playback_worker(chunk_ms):
                             if len(sub) == 0:
                                 continue
                             flap_from_pcm_chunk(sub, chunk_ms=chunk_ms)
-                            resampled = resample(
-                                sub, int(len(sub) * 48000 / 24000)
-                            ).astype(np.int16)
-                            stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-                            stereo = np.clip(
-                                stereo * PLAYBACK_VOLUME, -32768, 32767
-                            ).astype(np.int16)
-                            stream.write(stereo)
+                            stream.write(_resample_24k_mono_to_48k_stereo(sub))
 
                             interlude_counter += len(sub)
-                            if interlude_counter >= interlude_target:
-                                interlude()
-                                interlude_counter = 0
-                                interlude_target = random.randint(80000, 160000)
+                            interlude_counter, interlude_target = (
+                                _maybe_trigger_interlude(
+                                    interlude_counter, interlude_target
+                                )
+                            )
 
                 else:
                     chunk = item
@@ -209,20 +196,12 @@ def playback_worker(chunk_ms):
                         if len(sub) == 0:
                             continue
                         flap_from_pcm_chunk(sub, chunk_ms=chunk_ms)
-                        resampled = resample(sub, int(len(sub) * 48000 / 24000)).astype(
-                            np.int16
-                        )
-                        stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-                        stereo = np.clip(
-                            stereo * PLAYBACK_VOLUME, -32768, 32767
-                        ).astype(np.int16)
-                        stream.write(stereo)
+                        stream.write(_resample_24k_mono_to_48k_stereo(sub))
 
                         interlude_counter += len(sub)
-                        if interlude_counter >= interlude_target:
-                            interlude()
-                            interlude_counter = 0
-                            interlude_target = random.randint(80000, 160000)
+                        interlude_counter, interlude_target = _maybe_trigger_interlude(
+                            interlude_counter, interlude_target
+                        )
 
                 playback_queue.task_done()
                 last_played_time = time.time()
@@ -521,3 +500,20 @@ async def play_song(song_name):
         stop_all_motors()
         mqtt_publish("billy/state", "idle")
         print("🎶 Song finished, waiting for button press.")
+
+
+def _resample_24k_mono_to_48k_stereo(mono: np.ndarray) -> np.ndarray:
+    """Resample 24kHz mono int16 -> 48kHz stereo int16 with volume applied."""
+    resampled = resample(mono, int(len(mono) * 48000 / 24000)).astype(np.int16)
+    stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
+    return np.clip(stereo * PLAYBACK_VOLUME, -32768, 32767).astype(np.int16)
+
+
+def _maybe_trigger_interlude(
+    interlude_counter: int, interlude_target: int
+) -> tuple[int, int]:
+    if interlude_counter >= interlude_target:
+        interlude()
+        interlude_counter = 0
+        interlude_target = random.randint(80000, 160000)
+    return interlude_counter, interlude_target

@@ -1,0 +1,245 @@
+// ===================== Header Secondary Actions (Log Panel) =====================
+const LogPanel = (() => {
+    let autoScrollEnabled = false;
+    let isLogHidden = true;
+    let isEnvHidden = true;
+    let isSupportHidden = true;
+    let isReleaseHidden = true;
+
+    const rebootBilly = async () => {
+        if (!confirm("Are you sure you want to reboot Billy? This will reboot the whole system.")) return;
+        try {
+            const res = await fetch('/reboot', {method: 'POST'});
+            const data = await res.json();
+            if (data.status === "ok") {
+                showNotification("Billy is rebooting!", "success");
+                setTimeout(() => { location.reload(); }, 15000);
+            } else {
+                showNotification(data.error || "Reboot failed", "error");
+            }
+        } catch (err) {
+            console.error("Failed to reboot Billy:", err);
+            showNotification("Failed to reboot Billy", "error");
+        }
+    };
+
+    const shutdownBilly = async () => {
+        if (!confirm("Are you sure you want to shutdown Billy?\n\nThis will power off the Raspberry Pi but one or more of the motors may remain engaged.\nTo fully power down, make sure to also switch off or unplug the power supply after shutdown.")) return;
+        try {
+            const res = await fetch('/shutdown', {method: 'POST'});
+            const data = await res.json();
+            if (data.status === "ok") {
+                showNotification("Billy is shutting down!", "success");
+                setTimeout(() => { location.reload(); }, 3000);
+            } else {
+                showNotification(data.error || "Shutdown failed", "error");
+            }
+        } catch (err) {
+            console.error("Failed to shutdown Billy:", err);
+            showNotification("Failed to shutdown Billy", "error");
+        }
+    };
+
+    const restartUI = async () => {
+        try {
+            const res = await fetch('/restart', {method: 'POST'});
+            const data = await res.json();
+            if (data.status === "ok") {
+                showNotification("Restarting UI…", "success");
+                setTimeout(() => location.reload(), 3000);
+            } else {
+                showNotification(data.error || "Restart failed", "error");
+            }
+        } catch (err) {
+            showNotification(err.message, "error");
+        }
+    };
+
+    const fetchLogs = async () => {
+        const res = await fetch("/logs");
+        const data = await res.json();
+        const logOutput = document.getElementById("log-output");
+        const logContainer = document.getElementById("log-container");
+        logOutput.textContent = data.logs || "No logs found.";
+        if (autoScrollEnabled) {
+            requestAnimationFrame(() => {
+                logContainer.scrollTop = logContainer.scrollHeight;
+            });
+        }
+    };
+
+    const toggleLogPanel = () => {
+        isLogHidden = !isLogHidden;
+        elements.logPanel.classList.toggle("hidden", isLogHidden);
+        elements.toggleBtn.classList.toggle("bg-cyan-500", !isLogHidden);
+        elements.toggleBtn.classList.toggle("bg-zinc-700", isLogHidden);
+    };
+
+    const toggleEnvPanel = () => {
+        isEnvHidden = !isEnvHidden;
+        elements.envPanel.classList.toggle("hidden", isEnvHidden);
+        elements.toggleEnvBtn.classList.toggle("bg-amber-500", !isEnvHidden);
+        elements.toggleEnvBtn.classList.toggle("bg-zinc-700", isEnvHidden);
+        if (!isEnvHidden) {
+            fetch('/get-env')
+                .then(res => res.text())
+                .then(text => elements.envTextarea.value = text.trim())
+                .catch(() => showNotification("An error occurred while loading .env", "error"));
+        }
+    };
+
+    const toggleSupportPanel = () => {
+        isSupportHidden = !isSupportHidden;
+        elements.supportPanel.classList.toggle("hidden", isSupportHidden);
+        elements.toggleSupportBtn.classList.toggle("bg-red-500", !isSupportHidden);
+        elements.toggleSupportBtn.classList.toggle("bg-zinc-700", isSupportHidden);
+    };
+
+    const toggleReleasePanel = () => {
+        isReleaseHidden = !isReleaseHidden;
+        elements.releasePanel.classList.toggle("hidden", isReleaseHidden);
+        elements.toggleReleaseBtn.classList.toggle("bg-emerald-500", !isReleaseHidden);
+        elements.toggleReleaseBtn.classList.toggle("hover:bg-emerald-400", !isReleaseHidden);
+        elements.toggleReleaseBtn.classList.toggle("text-black", !isReleaseHidden);
+        elements.toggleReleaseBtn.classList.toggle("bg-zinc-700", isReleaseHidden);
+        elements.toggleReleaseBtn.classList.toggle("hover:bg-zinc-600", isReleaseHidden);
+    };
+
+    const toggleMotion = () => {
+        const btn = elements.toggleMotionBtn;
+        const icon = btn.querySelector(".material-icons");
+        btn.classList.toggle("bg-zinc-700");
+        document.documentElement.classList.toggle("reduce-motion");
+        const isReduced = document.documentElement.classList.contains("reduce-motion");
+        localStorage.setItem("reduceMotion", isReduced ? "1" : "0");
+        if (icon) icon.textContent = isReduced ? "blur_off" : "blur_on";
+    };
+
+    const toggleFullscreenLog = () => {
+        const icon = document.getElementById("fullscreen-icon");
+        const isFullscreen = elements.logContainer.classList.toggle("log-fullscreen");
+        icon.textContent = isFullscreen ? "fullscreen_exit" : "fullscreen";
+    };
+
+    const toggleAutoScroll = () => {
+        autoScrollEnabled = !autoScrollEnabled;
+        elements.scrollBtn.classList.toggle("bg-cyan-500", autoScrollEnabled);
+        elements.scrollBtn.classList.toggle("bg-zinc-800", !autoScrollEnabled);
+        elements.scrollBtn.title = autoScrollEnabled ? "Auto-scroll ON" : "Auto-scroll OFF";
+        if (autoScrollEnabled) {
+            elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+        }
+    };
+
+    const saveEnv = async () => {
+        if (!confirm("Are you sure you want to overwrite the .env file? This may affect how Billy runs.")) return;
+        try {
+            const res = await fetch('/save-env', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content: elements.envTextarea.value})
+            });
+            const data = await res.json();
+            if (data.status === "ok") {
+                fetch('/restart', {method: 'POST'})
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === "ok") {
+                            showNotification(".env saved. Restarting", "success");
+                            setTimeout(() => location.reload(), 3000);
+                        } else {
+                            showNotification(data.error || "Restart failed", "error");
+                        }
+                    })
+                    .catch(err => showNotification(err.message, "error"));
+            } else {
+                showNotification(data.error || "Unknown error", "error");
+            }
+        } catch (err) {
+            showNotification(err.message, "error");
+        }
+    };
+
+    let elements = {};
+    const bindUI = (cfg = {}) => {
+        elements = {
+            logOutput: document.getElementById("log-output"),
+            logContainer: document.getElementById("log-container"),
+            toggleFullscreenBtn: document.getElementById("toggle-fullscreen-btn"),
+            scrollBtn: document.getElementById("scroll-bottom-btn"),
+            toggleBtn: document.getElementById("toggle-log-btn"),
+            logPanel: document.getElementById("log-panel"),
+            toggleEnvBtn: document.getElementById("toggle-env-btn"),
+            envPanel: document.getElementById("env-panel"),
+            envTextarea: document.getElementById("env-textarea"),
+            saveEnvBtn: document.getElementById("save-env-btn"),
+            toggleMotionBtn: document.getElementById("toggle-motion-btn"),
+            powerBtn: document.getElementById("power-btn"),
+            powerDropdown: document.getElementById("power-dropdown"),
+            rebootBillyBtn: document.getElementById("reboot-billy-btn"),
+            restartUIBtn: document.getElementById("restart-ui-btn"),
+            shutdownBillyBtn: document.getElementById("shutdown-billy-btn"),
+            toggleSupportBtn: document.getElementById("toggle-support-btn"),
+            supportPanel: document.getElementById("support-panel"),
+            toggleReleaseBtn: document.getElementById("current-version"),
+            releasePanel: document.getElementById("release-panel"),
+            releaseTitle: document.getElementById("release-title"),
+            releaseBody: document.getElementById("release-body"),
+            releaseLink: document.getElementById("release-link"),
+            releaseClose: document.getElementById("release-close"),
+            releaseMarkRead: document.getElementById("release-mark-read"),
+            releaseBadge: document.getElementById("release-badge"),
+        };
+
+        const show = String(cfg.SHOW_SUPPORT || "").toLowerCase() === "true";
+        if (show) {
+            elements.toggleSupportBtn?.classList.remove("hidden");
+        } else {
+            elements.toggleSupportBtn?.classList.add("hidden");
+            elements.supportPanel?.classList.add("hidden");
+            isSupportHidden = true;
+        }
+
+        elements.powerBtn?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            elements.powerDropdown?.classList.toggle("hidden");
+        });
+
+        document.addEventListener("click", (e) => {
+            const menu = document.getElementById("power-menu");
+            if (!menu?.contains(e.target)) {
+                elements.powerDropdown?.classList.add("hidden");
+            }
+        });
+
+        elements.toggleBtn.addEventListener("click", toggleLogPanel);
+        elements.toggleFullscreenBtn.addEventListener("click", toggleFullscreenLog);
+        elements.scrollBtn.addEventListener("click", toggleAutoScroll);
+        elements.toggleEnvBtn.addEventListener("click", toggleEnvPanel);
+        elements.toggleMotionBtn.addEventListener("click", toggleMotion);
+        elements.saveEnvBtn.addEventListener("click", saveEnv);
+        elements.rebootBillyBtn.addEventListener("click", rebootBilly);
+        elements.restartUIBtn.addEventListener("click", restartUI);
+        elements.shutdownBillyBtn.addEventListener("click", shutdownBilly);
+        elements.toggleSupportBtn?.addEventListener("click", toggleSupportPanel);
+        elements.toggleReleaseBtn?.addEventListener("click", toggleReleasePanel);
+        elements.releaseClose?.addEventListener("click", () => {
+            isReleaseHidden = true;
+            elements.releasePanel.classList.add("hidden");
+            elements.toggleReleaseBtn.classList.remove("bg-emerald-500","hover:bg-emerald-400","text-black");
+            elements.toggleReleaseBtn.classList.add("bg-zinc-700","hover:bg-zinc-600","text-white");
+        });
+
+        if (localStorage.getItem("reduceMotion") === "1") {
+            document.documentElement.classList.add("reduce-motion");
+            const btn = elements.toggleMotionBtn;
+            const icon = btn.querySelector(".material-icons");
+            btn.classList.remove("bg-zinc-700");
+            if (icon) icon.textContent = "blur_off";
+        }
+    };
+
+    return {fetchLogs, bindUI};
+})();
+
+
