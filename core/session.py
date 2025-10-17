@@ -845,10 +845,15 @@ class BillySession:
             if self.ws:
                 try:
                     await self.ws.close()
-                    await self.ws.wait_closed()
+                    # Add timeout to prevent hanging
+                    try:
+                        await asyncio.wait_for(self.ws.wait_closed(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        print("⚠️ Websocket close timeout, forcing cleanup")
                 except Exception as e:
                     print(f"⚠️ Error closing websocket: {e}")
-                self.ws = None
+                finally:
+                    self.ws = None
 
     async def request_stop(self):
         print("🛑 Stop requested via external signal.")

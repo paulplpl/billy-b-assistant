@@ -35,6 +35,7 @@ CONFIG_KEYS = [
     "RUN_MODE",
     "SHOW_SUPPORT",
     "TURN_EAGERNESS",
+    "FORCE_PASS_CHANGE",
 ]
 
 

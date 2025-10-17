@@ -62,10 +62,18 @@ def on_button():
                     future = asyncio.run_coroutine_threadsafe(
                         session_instance.stop_session(), session_instance.loop
                     )
-                    future.result()  # Wait until it's fully stopped
-                print("✅ Session stopped.")
+                    # Add timeout to prevent hanging
+                    try:
+                        future.result(timeout=5.0)  # Wait up to 5 seconds
+                        print("✅ Session stopped.")
+                    except TimeoutError:
+                        print("⚠️ Session stop timeout, forcing cleanup")
+                        future.cancel()
             except Exception as e:
                 print(f"⚠️ Error stopping session ({type(e)}): {e}")
+            finally:
+                # Always ensure cleanup
+                session_instance = None
         is_active = False  # ✅ Ensure this is always set after stopping
         return
 
@@ -82,9 +90,12 @@ def on_button():
             session_instance = BillySession(interrupt_event=interrupt_event)
             session_instance.last_activity[0] = time.time()
             asyncio.run(session_instance.start())
+        except Exception as e:
+            print(f"⚠️ Session error: {e}")
         finally:
             move_head("off")
             is_active = False
+            session_instance = None  # Clear reference
             print("🕐 Waiting for button press...")
 
     session_thread = threading.Thread(target=run_session, daemon=True)

@@ -55,6 +55,109 @@ const LogPanel = (() => {
         }
     };
 
+    const changePassword = async (newPassword, confirmPassword) => {
+        try {
+            const res = await fetch('/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    new_password: newPassword,
+                    confirm_password: confirmPassword
+                })
+            });
+            
+            const data = await res.json();
+            if (data.status === "ok") {
+                showNotification("Password changed successfully! Reloading page...", "success");
+                // Reload page to pick up the new CHANGED_DEFAULT_PASS config
+                setTimeout(() => location.reload(), 2000);
+                return true;
+            } else {
+                showNotification(data.error || "Password change failed", "error");
+                return false;
+            }
+        } catch (err) {
+            console.error("Failed to change password:", err);
+            showNotification("Failed to change password", "error");
+            return false;
+        }
+    };
+
+    const showPasswordModal = () => {
+        const modal = document.getElementById("password-modal");
+        const form = document.getElementById("password-form");
+        const closeBtn = document.getElementById("close-password-modal");
+        
+        // Clear form
+        form.reset();
+        
+        // Show modal
+        modal.classList.remove("hidden");
+        
+        // Close modal handlers
+        const closeModal = () => {
+            modal.classList.add("hidden");
+            form.reset();
+        };
+        
+        closeBtn.addEventListener("click", closeModal);
+        
+        // Close on backdrop click
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+        
+        // Handle form submission
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const newPassword = formData.get("new_password");
+            const confirmPassword = formData.get("confirm_password");
+            
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                showNotification("New passwords do not match", "error");
+                return;
+            }
+            
+            // Validate password length
+            if (newPassword.length < 8) {
+                showNotification("New password must be at least 8 characters long", "error");
+                return;
+            }
+            
+            // Change password
+            const success = await changePassword(newPassword, confirmPassword);
+            if (success) {
+                closeModal();
+            }
+        });
+    };
+
+    const checkAndShowPasswordModal = (cfg) => {
+        // Show modal automatically if FORCE_PASS_CHANGE is true
+        if (cfg.FORCE_PASS_CHANGE==='True') {
+            setTimeout(() => {
+                showPasswordModal();
+            }, 1000); // Small delay to let page load
+        }
+    };
+
+    const hidePasswordButtonIfChanged = (cfg) => {
+        // Hide password change button if FORCE_PASS_CHANGE is false (password already changed)
+        if (!cfg.FORCE_PASS_CHANGE) {
+            const changePasswordBtn = document.getElementById("change-password-btn");
+            if (changePasswordBtn) {
+                changePasswordBtn.style.display = "none";
+            }
+        }
+    };
+
     const fetchLogs = async () => {
         const res = await fetch("/logs");
         const data = await res.json();
@@ -178,6 +281,7 @@ const LogPanel = (() => {
             powerDropdown: document.getElementById("power-dropdown"),
             rebootBillyBtn: document.getElementById("reboot-billy-btn"),
             restartUIBtn: document.getElementById("restart-ui-btn"),
+            changePasswordBtn: document.getElementById("change-password-btn"),
             shutdownBillyBtn: document.getElementById("shutdown-billy-btn"),
             toggleSupportBtn: document.getElementById("toggle-support-btn"),
             supportPanel: document.getElementById("support-panel"),
@@ -220,6 +324,7 @@ const LogPanel = (() => {
         elements.saveEnvBtn.addEventListener("click", saveEnv);
         elements.rebootBillyBtn.addEventListener("click", rebootBilly);
         elements.restartUIBtn.addEventListener("click", restartUI);
+        elements.changePasswordBtn?.addEventListener("click", showPasswordModal);
         elements.shutdownBillyBtn.addEventListener("click", shutdownBilly);
         elements.toggleSupportBtn?.addEventListener("click", toggleSupportPanel);
         elements.toggleReleaseBtn?.addEventListener("click", toggleReleasePanel);
@@ -237,9 +342,13 @@ const LogPanel = (() => {
             btn.classList.remove("bg-zinc-700");
             if (icon) icon.textContent = "blur_off";
         }
+
+        // Handle password change modal and button visibility
+        checkAndShowPasswordModal(cfg);
+        hidePasswordButtonIfChanged(cfg);
     };
 
-    return {fetchLogs, bindUI};
+    return {fetchLogs, bindUI, changePassword, showPasswordModal, checkAndShowPasswordModal, hidePasswordButtonIfChanged};
 })();
 
 

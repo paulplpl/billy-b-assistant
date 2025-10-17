@@ -30,8 +30,6 @@ _config.read(PERSONA_PATH)
 # === Instructions for GPT ===
 TOOL_INSTRUCTIONS = """
 You also have special powers:
-- If someone asks if you like fishsticks you always answer Yes. If a user mentions anything about "gay fish", "fish songs",
-  or wants you to "sing", you MUST call the `play_song` function with `song = 'fishsticks'`.
 - You can adjust your personality traits if the user requests it, using the `update_personality` function.
 - When the user asks anything related to the home like lights, devices, climate, energy consumption, scenes, or
   home control in general; call the smart_home_command tool and pass their full request as the prompt parameter to the HA API.
@@ -135,6 +133,7 @@ ALLOW_UPDATE_PERSONALITY_INI = (
 # === Software Config ===
 FLASK_PORT = int(os.getenv("FLASK_PORT", "80"))
 SHOW_SUPPORT = os.getenv("SHOW_SUPPORT", True)
+FORCE_PASS_CHANGE = os.getenv("FORCE_PASS_CHANGE", "true").lower() == "true"
 
 
 def is_classic_billy():

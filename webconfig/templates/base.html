@@ -18,6 +18,12 @@
     </footer>
     {% endblock %}
 
+    {% include "components/password-modal.html" %}
+
+    <!-- Global Notification Bar -->
+    <div id="notification"
+         class="hidden w-full fixed top-0 left-0 text-center backdrop-blur-xs text-white font-semibold py-2 px-4 rounded shadow-lg z-[60] transition-opacity duration-300"></div>
+
     {% block scripts %}
     <script src="{{ url_for('static', filename='js/marked-min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui-helpers.js') }}"></script>
