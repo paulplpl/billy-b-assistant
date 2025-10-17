@@ -69,6 +69,12 @@ const SettingsForm = (() => {
                 payload.BILLY_PINS = pinSelect.value; // "new" | "legacy"
             }
 
+            // Manually add MOUTH_ARTICULATION value
+            const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
+            if (mouthArticulationInput) {
+                payload.MOUTH_ARTICULATION = mouthArticulationInput.value;
+            }
+
             let hostnameChanged = false;
 
             const saveResponse = await fetch("/save", {
@@ -145,7 +151,50 @@ const SettingsForm = (() => {
         flaskPortInput.setAttribute("data-original", flaskPortInput.value);
     }
 
-    return {handleSettingsSave, populateDropdowns, saveDropdownSelections};
+    const initMouthArticulationSlider = () => {
+        // Use the same slider pattern as mic gain
+        setupSlider("mouth-articulation-bar", "mouth-articulation-fill", "MOUTH_ARTICULATION", 1, 10);
+    };
+
+    function setupSlider(barId, fillId, inputId, min, max) {
+        const bar = document.getElementById(barId);
+        const fill = document.getElementById(fillId);
+        const input = document.getElementById(inputId);
+
+        if (!bar || !fill || !input) return;
+
+        let isDragging = false;
+        const updateUI = (val) => {
+            const percent = ((val - min) / (max - min)) * 100;
+            fill.style.width = `${percent}%`;
+            fill.dataset.value = val;
+            // Ensure input value is set for form submission
+            input.value = val;
+            input.setAttribute('value', val);
+            // Update the value display
+            const valueDisplay = document.getElementById("mouth-articulation-value");
+            if (valueDisplay) {
+                valueDisplay.textContent = val;
+            }
+        };
+        const updateFromMouse = (e) => {
+            const rect = bar.getBoundingClientRect();
+            const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+            const val = Math.round(min + percent * (max - min));
+            input.value = val;
+            // Ensure the input value is properly set for form submission
+            input.setAttribute('value', val);
+            input.dispatchEvent(new Event("input", {bubbles: true}));
+            updateUI(val);
+        };
+        bar.addEventListener("mousedown", (e) => { isDragging = true; updateFromMouse(e); });
+        document.addEventListener("mousemove", (e) => { if (isDragging) updateFromMouse(e); });
+        document.addEventListener("mouseup", () => { isDragging = false; });
+        input.addEventListener("input", () => updateUI(Number(input.value)));
+        updateUI(Number(input.value));
+    }
+
+    return {handleSettingsSave, populateDropdowns, saveDropdownSelections, initMouthArticulationSlider};
 })();
 
 

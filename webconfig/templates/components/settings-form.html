@@ -414,6 +414,50 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Mouth Articulation Slider -->
+            <div class="mb-4">
+                <label for="MOUTH_ARTICULATION"
+                       class="flex justify-between items-center font-semibold text-sm text-slate-300">
+                    Mouth Articulation
+                    <span class="material-icons align-middle hover:text-cyan-400 cursor-pointer ml-1"
+                          onclick="toggleTooltip(this)">help_outline</span>
+                </label>
+
+                <!-- Tooltip -->
+                <div class="relative">
+                    <div data-tooltip>
+                        Controls how Billy's mouth moves during speech.<br>
+                        <b>Lower values:</b> More snappy, quick movements<br>
+                        <b>Higher values:</b> Smoother, more fluid movements
+                    </div>
+
+                    <div class="mb-4 mt-2 flex gap-2 items-center">
+                        <div class="w-20 text-sm font-medium text-gray-200">
+                            Level: <span id="mouth-articulation-value">{{ config.get('MOUTH_ARTICULATION', '5') }}</span>
+                        </div>
+                        <input type="range" 
+                               id="MOUTH_ARTICULATION" 
+                               name="MOUTH_ARTICULATION" 
+                               min="1" 
+                               max="10" 
+                               value="{{ config.get('MOUTH_ARTICULATION', '5') }}"
+                               class="hidden">
+                        <div
+                                class="relative w-full rounded-full bg-zinc-700 overflow-hidden cursor-pointer h-4"
+                                id="mouth-articulation-bar"
+                                style="user-select: none;"
+                        >
+                            <div
+                                    class="absolute left-0 top-0 h-full bg-emerald-500 transition-all duration-100"
+                                    id="mouth-articulation-fill"
+                                    style="width: 50%;"
+                                    data-value="{{ config.get('MOUTH_ARTICULATION', '5') }}"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- MQTT Settings -->

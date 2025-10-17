@@ -3,7 +3,6 @@ const LogPanel = (() => {
     let autoScrollEnabled = false;
     let isLogHidden = true;
     let isEnvHidden = true;
-    let isSupportHidden = true;
     let isReleaseHidden = true;
 
     const rebootBilly = async () => {
@@ -191,12 +190,6 @@ const LogPanel = (() => {
         }
     };
 
-    const toggleSupportPanel = () => {
-        isSupportHidden = !isSupportHidden;
-        elements.supportPanel.classList.toggle("hidden", isSupportHidden);
-        elements.toggleSupportBtn.classList.toggle("bg-red-500", !isSupportHidden);
-        elements.toggleSupportBtn.classList.toggle("bg-zinc-700", isSupportHidden);
-    };
 
     const toggleReleasePanel = () => {
         isReleaseHidden = !isReleaseHidden;
@@ -263,6 +256,20 @@ const LogPanel = (() => {
         }
     };
 
+    const hideSupportPanelIfDisabled = (cfg) => {
+        // Hide support section if SHOW_SUPPORT is false
+        const show = String(cfg.SHOW_SUPPORT || "").toLowerCase() === "true";
+        const supportSection = document.getElementById("support-section");
+        
+        if (supportSection) {
+            if (show) {
+                supportSection.style.display = "block";
+            } else {
+                supportSection.style.display = "none";
+            }
+        }
+    };
+
     let elements = {};
     const bindUI = (cfg = {}) => {
         elements = {
@@ -283,8 +290,6 @@ const LogPanel = (() => {
             restartUIBtn: document.getElementById("restart-ui-btn"),
             changePasswordBtn: document.getElementById("change-password-btn"),
             shutdownBillyBtn: document.getElementById("shutdown-billy-btn"),
-            toggleSupportBtn: document.getElementById("toggle-support-btn"),
-            supportPanel: document.getElementById("support-panel"),
             toggleReleaseBtn: document.getElementById("current-version"),
             releasePanel: document.getElementById("release-panel"),
             releaseTitle: document.getElementById("release-title"),
@@ -295,14 +300,6 @@ const LogPanel = (() => {
             releaseBadge: document.getElementById("release-badge"),
         };
 
-        const show = String(cfg.SHOW_SUPPORT || "").toLowerCase() === "true";
-        if (show) {
-            elements.toggleSupportBtn?.classList.remove("hidden");
-        } else {
-            elements.toggleSupportBtn?.classList.add("hidden");
-            elements.supportPanel?.classList.add("hidden");
-            isSupportHidden = true;
-        }
 
         elements.powerBtn?.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -326,7 +323,6 @@ const LogPanel = (() => {
         elements.restartUIBtn.addEventListener("click", restartUI);
         elements.changePasswordBtn?.addEventListener("click", showPasswordModal);
         elements.shutdownBillyBtn.addEventListener("click", shutdownBilly);
-        elements.toggleSupportBtn?.addEventListener("click", toggleSupportPanel);
         elements.toggleReleaseBtn?.addEventListener("click", toggleReleasePanel);
         elements.releaseClose?.addEventListener("click", () => {
             isReleaseHidden = true;
@@ -346,9 +342,12 @@ const LogPanel = (() => {
         // Handle password change modal and button visibility
         checkAndShowPasswordModal(cfg);
         hidePasswordButtonIfChanged(cfg);
+        
+        // Handle support panel visibility
+        hideSupportPanelIfDisabled(cfg);
     };
 
-    return {fetchLogs, bindUI, changePassword, showPasswordModal, checkAndShowPasswordModal, hidePasswordButtonIfChanged};
+    return {fetchLogs, bindUI, changePassword, showPasswordModal, checkAndShowPasswordModal, hidePasswordButtonIfChanged, hideSupportPanelIfDisabled};
 })();
 
 

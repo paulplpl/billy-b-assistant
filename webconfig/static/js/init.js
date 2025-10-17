@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     SettingsForm.handleSettingsSave();
     SettingsForm.saveDropdownSelections();
     SettingsForm.populateDropdowns(cfg);
+    SettingsForm.initMouthArticulationSlider();
     PersonaForm.handlePersonaSave();
     window.addBackstoryField = PersonaForm.addBackstoryField;
     MotorPanel.bindUI();

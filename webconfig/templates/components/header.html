@@ -59,16 +59,11 @@
             </div>
         </div>
 
-        <button id="toggle-support-btn"
-                class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
-                title="Show support panel">
-            <span class="material-icons">favorite</span>
-        </button>
 
         <div id="version-info" class="text-sm flex flex-col md:items-end relative inline-block">
             <button id="current-version"
                     class="bg-zinc-700 hover:bg-zinc-600 transition-all text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
-                    title="Show release notes">
+                    title="Show release notes & support">
                 <span class="material-icons">commit</span>
                 <span class="label">Current: ...</span>
             </button>
@@ -137,50 +132,11 @@
         </div>
     </section>
 
-    <!-- Support Panel -->
-    <section id="support-panel" class="mt-2 relative hidden">
-        <div class="relative rounded text-sm transition-all duration-300 text-white">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-800/80 p-4 rounded border border-red-600">
-
-                <!-- Left column: QR + button -->
-                <div class="flex flex-col items-center justify-center space-y-4">
-                    <img src="../static/images/qrcode.png"
-                         alt="PayPal QR code"
-                         class="w-40 h-40 object-contain select-none"
-                         draggable="false">
-
-                    <a href="https://paypal.me/thomkoopman050"
-                       target="_blank"
-                       rel="noopener"
-                       class="w-auto inline-flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 text-zinc-900 font-semibold py-1 px-2 rounded shadow">
-                        <span class="material-icons">open_in_new</span>
-                        <span>Open PayPal.me</span>
-                    </a>
-                </div>
-
-                <!-- Right column: text -->
-                <div class="flex flex-col justify-center text-center md:text-left space-y-2">
-                    <p class="text-base text-zinc-200 font-medium">
-                        Billy's software is provided free of charge and it'll stay that way.
-                    </p>
-                    <p class="text-sm text-zinc-400">
-                        I build and maintain it in my spare time for fun.<br>
-                        If you enjoy Billy and like to support ongoing development, consider a small donation.<br>
-                        It's always much appreciated, never required.
-                    </p>
-                    <p class="text-sm text-zinc-400">
-                        Thanks,<br>
-                        Thom Koopman
-                    </p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Release Notes Panel -->
+    <!-- Release Notes & Support Panel -->
     <section id="release-panel" class="mt-2 relative hidden">
-        <div class="relative rounded text-sm transition-all duration-300 text-white">
-            <div class="bg-zinc-800/80 p-4 rounded border border-emerald-600">
+        <div class="relative flex flex-col md:flex-row gap-4 text-sm transition-all duration-300 text-white">
+            <!-- Release Notes Section -->
+            <div class="bg-zinc-800/80 p-4 mb-0 rounded border border-emerald-600 grow">
                 <div class="flex items-start gap-3">
                     <span class="material-icons text-emerald-400 select-none" aria-hidden="true">campaign</span>
                     <div class="flex-1">
@@ -208,6 +164,50 @@
                             <span class="material-icons text-xs" aria-hidden="true">open_in_new</span>
                             <span class="underline">View on GitHub</span>
                         </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Support Section -->
+            <div id="support-section" class="bg-zinc-800/80 p-4 rounded border border-red-600">
+                <div class="flex items-start gap-3">
+                    <span class="material-icons text-red-400 select-none" aria-hidden="true">favorite</span>
+                    <div class="flex-1">
+                        <h4 class="text-sm font-bold text-red-300 mb-3">Support Development</h4>
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-6">
+                            <!-- Left column: QR + button -->
+                            <div class="flex flex-col items-center justify-center space-y-4">
+                                <img src="../static/images/qrcode.png"
+                                     alt="PayPal QR code"
+                                     class="w-36 h-36 object-contain select-none"
+                                     draggable="false">
+
+                                <a href="https://paypal.me/thomkoopman050"
+                                   target="_blank"
+                                   rel="noopener"
+                                   class="w-auto inline-flex items-center justify-center gap-2 text-xs bg-red-500 hover:bg-red-400 text-zinc-900 font-semibold py-1 px-2 rounded shadow">
+                                    <span class="material-icons">open_in_new</span>
+                                    <span>Open PayPal.me</span>
+                                </a>
+                            </div>
+
+                            <!-- Right column: text -->
+                            <div class="flex flex-col justify-center text-center md:text-left space-y-2">
+                                <p class="text-sm text-zinc-200 font-medium">
+                                    Billy's software is provided free of charge and it'll stay that way.
+                                </p>
+                                <p class="text-xs text-zinc-400">
+                                    I build and maintain it in my spare time for fun.<br>
+                                    If you enjoy Billy and like to support ongoing development, consider a small donation.<br>
+                                    It's always much appreciated, never required.
+                                </p>
+                                <p class="text-xs text-zinc-400">
+                                    Thanks,<br>
+                                    Thom Koopman
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -13,7 +13,12 @@ from ..state import PROJECT_ROOT, RELEASE_NOTE, load_versions, save_versions
 
 bp = Blueprint("system", __name__)
 
-ENV_PATH = find_dotenv()
+# Find .env file in project root (not webconfig directory)
+ENV_PATH = find_dotenv(usecwd=True)
+if not ENV_PATH or not os.path.exists(ENV_PATH):
+    # Fallback: look for .env in project root
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    ENV_PATH = os.path.join(project_root, ".env")
 CONFIG_KEYS = [
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
@@ -36,6 +41,7 @@ CONFIG_KEYS = [
     "SHOW_SUPPORT",
     "TURN_EAGERNESS",
     "FORCE_PASS_CHANGE",
+    "MOUTH_ARTICULATION",
 ]
 
 
