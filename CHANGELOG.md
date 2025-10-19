@@ -164,20 +164,24 @@ All notable changes to this project will be documented in this file.
 - Better recovery after OpenAI API or network errors.
 - Motor watchdog will now disengage any motor that is on > 30 seconds
 
-## [1.6.0] — 2025-10-13
+## [1.6.0] — 2025-10-19
+
 ### Added
-- Support for gpt-realtime-mini API model
-- Turn Detection Eagerness setting.
-- Mandatory `follow_up_intent` each turn (moved into tool instructions).
-- Heuristic follow-up detector (handles “let me know”, “should I…”, etc.).
-- Delayed/retry mic open after playback to avoid ALSA `-9985`.
-- Debug logs for follow-up intent + final transcripts.
-- 
+- **Mouth Articulation Slider**: New UI slider (1-10) to control mouth movement responsiveness - lower values = snappy movements, higher values = smoother movements
+- **Self-Trigger Prevention**: Billy no longer hears his own wake-up sounds - mic data is blocked until wake-up sound completes
+- **Enhanced Mic Error Recovery**: Improved ALSA device handling with progressive retry delays and fallback to default audio device
+- **Modular Web UI**: Refactored web interface into reusable components (header, settings forms, password modal)
+- **Flask Application Factory**: Restructured webconfig as proper Flask blueprints for better maintainability
+
 ### Changed
-- Kickoff (MQTT say): mic opens after first reply **only if** follow-up expected; `say(..., interactive)` still works (`False` = Dory).
-- Stream parsing also reads `response.done` content.
-- Cleaner event routing + state handling.
+- **Web UI Architecture**: Split monolithic `index.html` into modular Jinja2 components for better organization
+- **Settings Persistence**: Improved dropdown value persistence using localStorage for immediate visual feedback
+- **Support Panel**: Merged support information into release notes panel for cleaner UI
+- **Mic Error Handling**: Enhanced retry logic with progressive delays (0.6s, 1.1s, 1.6s) and audio system reset attempts
+- **Session Flow**: Sessions now start immediately but delay mic data transmission until wake-up sound finishes
 
 ### Fixed
-- ALSA mic-open race (“Device unavailable”).
-- Missed follow-ups when no `?`.
+- **Head Movement Stuck**: Prevented head from staying extended indefinitely during interlude routines
+- **Self-Triggering**: Eliminated Billy hearing and responding to his own (long) wake-up sounds
+- **ALSA Device Conflicts**: Improved audio device handoff between playback and recording
+- **Session Hanging**: Added timeouts to prevent sessions from getting stuck in "Stopping active session" state

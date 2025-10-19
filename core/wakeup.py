@@ -53,7 +53,7 @@ class WakeupClipGenerator:
                     "session": {
                         "type": "realtime",
                         "instructions": (
-                            "Always respond by speaking the exact user text out loud. Do not change or rephrase anything!\n\n"
+                            "IMPORTANT: Always respond by speaking the exact user text out loud. Do not add, change or rephrase anything!\n\n"
                             + CUSTOM_INSTRUCTIONS
                         ),
                         "audio": {

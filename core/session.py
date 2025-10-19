@@ -508,7 +508,18 @@ class BillySession:
         """
         for attempt in range(1, retries + 1):
             try:
-                await asyncio.sleep(delay if attempt > 1 else 0.0)
+                # Progressive delay: longer waits for later attempts
+                if attempt > 1:
+                    wait_time = delay * (attempt - 1) + 0.5
+                    print(f"⏳ Waiting {wait_time:.1f}s before mic retry {attempt}...")
+                    await asyncio.sleep(wait_time)
+
+                # Ensure mic is fully stopped before retry
+                if self.mic_running:
+                    self.mic.stop()
+                    self.mic_running = False
+                    await asyncio.sleep(0.2)  # Brief pause after stop
+
                 if not self.mic_running:
                     self.mic.start(self.mic_callback)  # may raise
                     self.mic_running = True
@@ -520,6 +531,21 @@ class BillySession:
                 return True
             except Exception as e:
                 print(f"⚠️ Mic open failed (attempt {attempt}/{retries}): {e}")
+                # For ALSA device unavailable errors, try to reset audio system
+                if "Device unavailable" in str(e) and attempt < retries:
+                    print("🔄 Attempting audio system reset...")
+                    try:
+                        import subprocess
+
+                        subprocess.run(
+                            ["sudo", "alsactl", "restore"],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                        await asyncio.sleep(1.0)
+                    except Exception as reset_error:
+                        print(f"⚠️ Audio reset failed: {reset_error}")
+
         print("🛑 Mic failed to open after retries.")
         return False
 
@@ -639,6 +665,16 @@ class BillySession:
     def mic_callback(self, indata, *_):
         if not self.allow_mic_input or not self.session_active.is_set():
             return
+
+        # Don't send mic data until wake-up sound is finished
+        if not TEXT_ONLY_MODE and not audio.playback_done_event.is_set():
+            return
+
+        # Log once when mic data starts being sent after wake-up sound
+        if not hasattr(self, '_mic_data_started') and not TEXT_ONLY_MODE:
+            print("🎤 Mic data now being sent (wake-up sound finished)")
+            self._mic_data_started = True
+
         samples = indata[:, 0]
         rms = np.sqrt(np.mean(np.square(samples.astype(np.float32))))
         self.last_rms = rms

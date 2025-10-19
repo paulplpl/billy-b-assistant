@@ -78,6 +78,8 @@ def on_button():
         return
 
     audio.ensure_playback_worker_started(config.CHUNK_MS)
+    # Clear the playback done event so session waits for wake-up sound
+    audio.playback_done_event.clear()
     threading.Thread(target=audio.play_random_wake_up_clip, daemon=True).start()
     is_active = True
     interrupt_event = threading.Event()  # Fresh event for each session

@@ -221,6 +221,8 @@ def _interlude_routine():
         if random.random() < 0.9:
             move_head("on")
             print(f"⚠️ Interlude MOVE HEAD ON")
+            # Auto-turn off head after max 3 seconds to prevent getting stuck
+            threading.Timer(5.0, lambda: move_head("off")).start()
     except Exception as e:
         print(f"⚠️ Interlude error: {e}")
 
