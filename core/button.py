@@ -7,6 +7,7 @@ from concurrent.futures import CancelledError
 from gpiozero import Button
 
 from . import audio, config
+from .logger import logger
 from .movements import move_head
 from .session import BillySession
 
@@ -47,13 +48,13 @@ def on_button():
         return
 
     if is_active:
-        print("🔁 Button pressed during active session.")
+        logger.info("Button pressed during active session.", "🔁")
         interrupt_event.set()
         audio.stop_playback()
 
         if session_instance:
             try:
-                print("🛑 Stopping active session...")
+                logger.info("Stopping active session...", "🛑")
                 # A concurrent.futures.CancelledError is expected here, because the last
                 # thing that BillySession.stop_session does is `await asyncio.sleep`,
                 # and that will raise CancelledError because it's a logical place to
@@ -65,12 +66,12 @@ def on_button():
                     # Add timeout to prevent hanging
                     try:
                         future.result(timeout=5.0)  # Wait up to 5 seconds
-                        print("✅ Session stopped.")
+                        logger.success("Session stopped.")
                     except TimeoutError:
-                        print("⚠️ Session stop timeout, forcing cleanup")
+                        logger.warning("Session stop timeout, forcing cleanup")
                         future.cancel()
             except Exception as e:
-                print(f"⚠️ Error stopping session ({type(e)}): {e}")
+                logger.warning(f"Error stopping session ({type(e)}): {e}")
             finally:
                 # Always ensure cleanup
                 session_instance = None
@@ -83,7 +84,7 @@ def on_button():
     threading.Thread(target=audio.play_random_wake_up_clip, daemon=True).start()
     is_active = True
     interrupt_event = threading.Event()  # Fresh event for each session
-    print("🎤 Button pressed. Listening...")
+    logger.info("Button pressed. Listening...", "🎤")
 
     def run_session():
         global session_instance, is_active
@@ -93,12 +94,12 @@ def on_button():
             session_instance.last_activity[0] = time.time()
             asyncio.run(session_instance.start())
         except Exception as e:
-            print(f"⚠️ Session error: {e}")
+            logger.error(f"Session error: {e}")
         finally:
             move_head("off")
             is_active = False
             session_instance = None  # Clear reference
-            print("🕐 Waiting for button press...")
+            logger.info("Waiting for button press...", "🕐")
 
     session_thread = threading.Thread(target=run_session, daemon=True)
     session_thread.start()
@@ -107,7 +108,9 @@ def on_button():
 def start_loop():
     audio.detect_devices(debug=config.DEBUG_MODE)
     button.when_pressed = on_button
-    print("🎦 Ready. Press button to start a voice session. Press Ctrl+C to quit.")
-    print("🕐 Waiting for button press...")
+    logger.info(
+        "Ready. Press button to start a voice session. Press Ctrl+C to quit.", "🎦"
+    )
+    logger.info("Waiting for button press...", "🕐")
     while True:
         time.sleep(0.1)

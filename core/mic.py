@@ -1,6 +1,7 @@
 import sounddevice as sd
 
 from . import audio as audio
+from .logger import logger
 
 
 class MicManager:
@@ -22,8 +23,8 @@ class MicManager:
         except Exception as e:
             # If device-specific opening fails, try with default device
             if audio.MIC_DEVICE_INDEX is not None:
-                print(
-                    f"⚠️ Failed to open mic with device {audio.MIC_DEVICE_INDEX}, trying default device..."
+                logger.warning(
+                    f"Failed to open mic with device {audio.MIC_DEVICE_INDEX}, trying default device..."
                 )
                 try:
                     self.stream = sd.InputStream(
@@ -35,9 +36,9 @@ class MicManager:
                         callback=callback,
                     )
                     self.stream.start()
-                    print("✅ Mic opened with default device")
+                    logger.success("Mic opened with default device")
                 except Exception as fallback_error:
-                    print(f"⚠️ Fallback mic open also failed: {fallback_error}")
+                    logger.error(f"Fallback mic open also failed: {fallback_error}")
                     raise e  # Re-raise original error
             else:
                 raise e

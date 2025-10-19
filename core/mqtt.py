@@ -6,6 +6,7 @@ import threading
 import paho.mqtt.client as mqtt
 
 from .config import MQTT_HOST, MQTT_PASSWORD, MQTT_PORT, MQTT_USERNAME
+from .logger import logger
 from .movements import stop_all_motors
 
 
@@ -21,18 +22,18 @@ def on_connect(client, userdata, flags, rc):
     global mqtt_connected
     if rc == 0:
         mqtt_connected = True
-        print("🔌 MQTT connected successfully!")
+        logger.success("MQTT connected successfully!", "🔌")
         mqtt_send_discovery()
         client.subscribe("billy/command")
         client.subscribe("billy/say")  # single endpoint
     else:
-        print(f"⚠️ MQTT connection failed with code {rc}")
+        logger.warning(f"MQTT connection failed with code {rc}")
 
 
 def start_mqtt():
     global mqtt_client
     if not mqtt_available():
-        print("⚠️ MQTT not configured, skipping.")
+        logger.warning("MQTT not configured, skipping.")
         return
 
     mqtt_client = mqtt.Client()
@@ -44,7 +45,7 @@ def start_mqtt():
         mqtt_client.loop_start()
         mqtt_publish("billy/state", "idle", retain=True)
     except Exception as e:
-        print(f"❌ MQTT connection error: {e}")
+        logger.error(f"MQTT connection error: {e}")
 
 
 def stop_mqtt():
@@ -52,7 +53,7 @@ def stop_mqtt():
     if mqtt_client:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
-        print("\n🔌 MQTT disconnected.")
+        logger.info("MQTT disconnected.", "🔌")
 
 
 def mqtt_publish(topic, payload, retain=True, retry=True):
@@ -61,22 +62,24 @@ def mqtt_publish(topic, payload, retain=True, retry=True):
     if mqtt_available():
         if not mqtt_client or not mqtt_connected:
             if retry:
-                print("🔁 MQTT not connected. Trying to reconnect...")
+                logger.info("MQTT not connected. Trying to reconnect...", "🔁")
                 try:
                     mqtt_client.reconnect()
                     mqtt_connected = True
                 except Exception as e:
-                    print(f"\n❌ MQTT reconnect failed: {e}")
+                    logger.error(f"MQTT reconnect failed: {e}")
                     return
             else:
-                print(f"\n⚠️ MQTT not connected. Skipping publish {topic}={payload}")
+                logger.warning(
+                    f"MQTT not connected. Skipping publish {topic}={payload}"
+                )
                 return
 
         try:
             mqtt_client.publish(topic, payload, retain=retain)
-            print(f"📡 MQTT publish: {topic} = {payload} (retain={retain})")
+            logger.verbose(f"MQTT publish: {topic} = {payload} (retain={retain})", "📡")
         except Exception as e:
-            print(f"\n❌ MQTT publish failed: {e}")
+            logger.error(f"MQTT publish failed: {e}")
 
 
 def mqtt_send_discovery():
@@ -196,15 +199,17 @@ def _run_async(coro):
 
 
 def on_message(client, userdata, msg):
-    print(f" \n📩 MQTT message received: {msg.topic} = {msg.payload.decode()} ")
+    logger.verbose(f"MQTT message received: {msg.topic} = {msg.payload.decode()}", "📩")
     if msg.topic == "billy/command":
         command = msg.payload.decode().strip().lower()
         if command == "shutdown":
-            print("\n🛑 Shutdown command received over MQTT. Shutting down...")
+            logger.warning(
+                "Shutdown command received over MQTT. Shutting down...", "🛑"
+            )
             try:
                 stop_all_motors()
             except Exception as e:
-                print(f"\n⚠️ Error stopping motors: {e}")
+                logger.warning(f"Error stopping motors: {e}")
             stop_mqtt()
             subprocess.Popen(["sudo", "shutdown", "now"])
         return
@@ -229,4 +234,4 @@ def on_message(client, userdata, msg):
             else:
                 print("⚠️ SAY command received, but text was empty")
         except Exception as e:
-            print(f"❌ Failed to run say(): {e}")
+            logger.error(f"Failed to run say(): {e}")

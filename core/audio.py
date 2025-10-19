@@ -21,6 +21,7 @@ from .config import (
     SPEAKER_PREFERENCE,
     TEXT_ONLY_MODE,
 )
+from .logger import logger
 from .movements import (
     flap_from_pcm_chunk,
     interlude,
@@ -58,10 +59,10 @@ def detect_devices(debug=False):
 
     devices = sd.query_devices()
 
-    print("🔢 Enumerating audio devices...")
+    logger.info("Enumerating audio devices...", "🔢")
     for i, d in enumerate(devices):
         if debug:
-            print(
+            logger.verbose(
                 f"  {i}: {d['name']} (inputs: {d['max_input_channels']}, outputs: {d['max_output_channels']})"
             )
 
@@ -72,7 +73,7 @@ def detect_devices(debug=False):
                 or not MIC_PREFERENCE
             ):
                 MIC_DEVICE_INDEX = i
-                print(f"✔ Input device index {i} selected.")
+                logger.success(f"Input device index {i} selected.")
 
             MIC_RATE = int(d['default_samplerate'])
             MIC_CHANNELS = d['max_input_channels']
@@ -85,13 +86,13 @@ def detect_devices(debug=False):
                 or not SPEAKER_PREFERENCE
             ):
                 OUTPUT_DEVICE_INDEX = i
-                print(f"✔ Output device index {i} selected.")
+                logger.success(f"Output device index {i} selected.")
 
             OUTPUT_RATE = int(d['default_samplerate'])
             OUTPUT_CHANNELS = d['max_output_channels']
 
     if MIC_DEVICE_INDEX is None or (OUTPUT_DEVICE_INDEX is None and not TEXT_ONLY_MODE):
-        print("❌ No suitable input/output devices found.")
+        logger.error("No suitable input/output devices found.")
         sys.exit(1)
 
 
@@ -113,7 +114,7 @@ def playback_worker(chunk_ms):
         with sd.OutputStream(
             samplerate=48000, channels=2, dtype='int16', device=OUTPUT_DEVICE_INDEX
         ) as stream:
-            print("🔈 Output stream opened")
+            logger.info("Output stream opened", "🔈")
             while True:
                 item = playback_queue.get()
                 now = time.time()
@@ -135,7 +136,7 @@ def playback_worker(chunk_ms):
                         print(f"🐟 Head move started for {move_duration:.2f} seconds")
 
                 if item is None:
-                    print("🧵 Received stop signal, cleaning up.")
+                    logger.info("Received stop signal, cleaning up.", "🧵")
                     playback_queue.task_done()
                     break
 
@@ -207,7 +208,7 @@ def playback_worker(chunk_ms):
                 last_played_time = time.time()
 
     except Exception as e:
-        print(f"❌ Playback stream failed: {e}")
+        logger.error(f"Playback stream failed: {e}")
     finally:
         playback_done_event.set()
 
@@ -230,7 +231,7 @@ def save_audio_to_wav(audio_bytes, filename):
         wf.setsampwidth(2)
         wf.setframerate(24000)
         wf.writeframes(audio_bytes)
-    print(f"🎨 Saved response audio to {full_path}")
+    logger.verbose(f"Saved response audio to {full_path}", "🎨")
 
 
 def rotate_and_save_response_audio(audio_bytes):
@@ -271,7 +272,7 @@ def send_mic_audio(ws, samples, loop):
         # Await the result; avoid race conditions.
         future.result()
     except Exception as e:
-        print(f"❌ Failed to send audio chunk: {e}")
+        logger.error(f"Failed to send audio chunk: {e}")
 
 
 def enqueue_wav_to_playback(filepath):

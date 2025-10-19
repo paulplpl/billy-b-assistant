@@ -157,6 +157,47 @@ const LogPanel = (() => {
         }
     };
 
+
+    const applyLogLevel = async () => {
+        const logLevelSelect = document.getElementById("log-level-select");
+        const selectedLevel = logLevelSelect.value;
+
+        try {
+            const res = await fetch("/save", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({LOG_LEVEL: selectedLevel})
+            });
+            const data = await res.json();
+            if (data.status === "ok") {
+                showNotification(`Log level changed to ${selectedLevel}. Restarting Billy and UI...`, "success");
+                
+                // Restart both Billy service and webconfig service
+                setTimeout(async () => {
+                    try {
+                        // Restart Billy service
+                        await fetch("/service/restart", {method: "POST"});
+                        
+                        // Small delay then restart webconfig
+                        setTimeout(async () => {
+                            await fetch("/restart", {method: "POST"});
+                        }, 2000);
+                        
+                    } catch (restartErr) {
+                        console.error("Failed to restart services:", restartErr);
+                        showNotification("Log level saved but restart failed. Please restart manually.", "warning");
+                    }
+                }, 1000);
+                
+            } else {
+                showNotification(data.error || "Failed to change log level", "error");
+            }
+        } catch (err) {
+            console.error("Failed to change log level:", err);
+            showNotification("Failed to change log level", "error");
+        }
+    };
+
     const fetchLogs = async () => {
         const res = await fetch("/logs");
         const data = await res.json();
@@ -323,6 +364,16 @@ const LogPanel = (() => {
         elements.restartUIBtn.addEventListener("click", restartUI);
         elements.changePasswordBtn?.addEventListener("click", showPasswordModal);
         elements.shutdownBillyBtn.addEventListener("click", shutdownBilly);
+        
+        // Log level control
+        const applyLogLevelBtn = document.getElementById("apply-log-level-btn");
+        applyLogLevelBtn?.addEventListener("click", applyLogLevel);
+        
+        // Set current log level in dropdown
+        const logLevelSelect = document.getElementById("log-level-select");
+        if (logLevelSelect && cfg.LOG_LEVEL) {
+            logLevelSelect.value = cfg.LOG_LEVEL;
+        }
         elements.toggleReleaseBtn?.addEventListener("click", toggleReleasePanel);
         elements.releaseClose?.addEventListener("click", () => {
             isReleaseHidden = true;

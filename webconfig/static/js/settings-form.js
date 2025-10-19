@@ -51,7 +51,7 @@ const SettingsForm = (() => {
             e.preventDefault();
 
             const resStatus = await fetch("/service/status");
-            const {status: wasActive} = await resStatus.json();
+            await resStatus.json(); // Check service status
 
             const formData = new FormData(this);
             const payload = Object.fromEntries(formData.entries());
@@ -83,7 +83,7 @@ const SettingsForm = (() => {
                 body: JSON.stringify(payload),
             });
             const saveResult = await saveResponse.json();
-            let portChanged = saveResult.port_changed || (oldPort !== newPort);
+            const portChanged = saveResult.port_changed || (oldPort !== newPort);
 
             if (newHostname && newHostname !== oldHostname) {
                 const hostResponse = await fetch("/hostname", {

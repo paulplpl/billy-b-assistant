@@ -27,6 +27,7 @@ from .config import (
     VOICE,
 )
 from .ha import send_conversation_prompt
+from .logger import logger
 from .mic import MicManager
 from .movements import move_tail_async, stop_all_motors
 from .mqtt import mqtt_publish
@@ -186,7 +187,7 @@ class BillySession:
             self._added_done_text = True
         self.full_response_text += "\n\n"
         if DEBUG_MODE:
-            print(f"\n📝 transcript(done): {transcript!r}")
+            logger.info(f"Transcript completed: {transcript!r}", "📝")
 
     def _on_audio_out(self, data: dict[str, Any]):
         if TEXT_ONLY_MODE:
@@ -200,7 +201,9 @@ class BillySession:
             audio.playback_queue.put(audio_chunk)
 
             if self.interrupt_event.is_set():
-                print("⛔ Assistant turn interrupted. Stopping response playback.")
+                logger.warning(
+                    "Assistant turn interrupted. Stopping response playback.", "⛔"
+                )
                 while not audio.playback_queue.empty():
                     try:
                         audio.playback_queue.get_nowait()
@@ -227,9 +230,11 @@ class BillySession:
         self.allow_mic_input = False
         if self.first_text:
             mqtt_publish("billy/state", "speaking")
-            print("\n🐟 Billy: ", end="", flush=True)
+            logger.info("Billy: ", "🐟")
             self.first_text = False
             self.user_spoke_after_assistant = False
+        # Don't log individual deltas - they're too verbose
+        # Just print to console for real-time display
         print(data.get("delta", ""), end="", flush=True)
         self.full_response_text += data.get("delta", "")
 
@@ -244,8 +249,8 @@ class BillySession:
         try:
             args = json.loads(raw_args)
         except Exception as e:
-            print(
-                f"\n⚠️ follow_up_intent: failed to parse arguments: {e} | raw={raw_args!r}"
+            logger.warning(
+                f"follow_up_intent: failed to parse arguments: {e} | raw={raw_args!r}"
             )
             args = {}
 
@@ -255,11 +260,11 @@ class BillySession:
         self._saw_follow_up_call = True
 
         if DEBUG_MODE:
-            print(
-                "\n🧭 follow_up_intent"
-                f" | expects_follow_up={self.follow_up_expected}"
+            logger.verbose(
+                f"follow_up_intent | expects_follow_up={self.follow_up_expected}"
                 f" | suggested_prompt={self.follow_up_prompt!r}"
-                f" | reason={reason!r}"
+                f" | reason={reason!r}",
+                "🧭",
             )
 
     async def _handle_update_personality(self, raw_args: str | None):
@@ -298,7 +303,7 @@ class BillySession:
         args = json.loads(raw_args or "{}")
         song_name = args.get("song")
         if song_name:
-            print(f"\n🎵 Assistant requested to play song: {song_name} ")
+            logger.info(f"Assistant requested to play song: {song_name}", "🎵")
             await self.stop_session()
             await asyncio.sleep(1.0)
             await audio.play_song(song_name)
@@ -308,14 +313,14 @@ class BillySession:
         prompt = args.get("prompt")
         if not prompt:
             return
-        print(f"\n🏠 Sending to Home Assistant Conversation API: {prompt} ")
+        logger.info(f"Sending to Home Assistant Conversation API: {prompt}", "🏠")
         ha_response = await send_conversation_prompt(prompt)
         speech_text = None
         if isinstance(ha_response, dict):
             speech_text = ha_response.get("speech", {}).get("plain", {}).get("speech")
 
         if speech_text:
-            print(f"🔍 HA debug: {ha_response.get('data')}")
+            logger.verbose(f"HA debug: {ha_response.get('data')}", "🔍")
             ha_message = f"Home Assistant says: {speech_text}"
             print(f"\n📣 {ha_message}")
             await self._ws_send_json({
@@ -328,7 +333,7 @@ class BillySession:
             })
             await self._ws_send_json({"type": "response.create"})
         else:
-            print(f"⚠️ Failed to parse HA response: {ha_response}")
+            logger.warning(f"Failed to parse HA response: {ha_response}")
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
@@ -368,18 +373,20 @@ class BillySession:
         if error:
             error_type = error.get("type")
             error_message = error.get("message", "Unknown error")
-            print(f"\n❌ OpenAI API Error [{error_type}]: {error_message}")
+            logger.error(f"OpenAI API Error [{error_type}]: {error_message}")
         else:
-            print("\n✿ Assistant response complete.")
+            logger.success("Assistant response complete.", "✿")
 
         if not TEXT_ONLY_MODE:
             await asyncio.to_thread(audio.playback_queue.join)
             await asyncio.sleep(1)
             if len(self.audio_buffer) > 0:
-                print(f"💾 Saving audio buffer ({len(self.audio_buffer)} bytes)")
+                logger.verbose(
+                    f"Saving audio buffer ({len(self.audio_buffer)} bytes)", "💾"
+                )
                 audio.rotate_and_save_response_audio(self.audio_buffer)
             else:
-                print("⚠️ Audio buffer was empty, skipping save.")
+                logger.warning("Audio buffer was empty, skipping save.")
             self.audio_buffer.clear()
             audio.playback_done_event.set()
             self.last_activity[0] = time.time()
@@ -404,12 +411,13 @@ class BillySession:
                         self.last_activity[0] = time.time()
             else:
                 if DEBUG_MODE:
-                    print(
-                        "ℹ️ Kickoff turn ended with no speech (tool-only). Waiting for next turn."
+                    logger.info(
+                        "Kickoff turn ended with no speech (tool-only). Waiting for next turn.",
+                        "ℹ️",
                     )
 
         if self.run_mode == "dory":
-            print("🎣 Dory mode active. Ending session after single response.")
+            logger.info("Dory mode active. Ending session after single response.", "🎣")
             await self.stop_session()
 
     # ---- Mic helpers -------------------------------------------------
@@ -429,13 +437,13 @@ class BillySession:
             self.mic.start(self.mic_callback)
             self.mic_running = True
             if DEBUG_MODE:
-                print("🎤 Mic started")
+                logger.info("Mic started", "🎤")
             if not self.mic_timeout_task or self.mic_timeout_task.done():
                 self.mic_timeout_task = asyncio.create_task(self.mic_timeout_checker())
 
         except Exception as e:
             self.mic_running = False
-            print(f"❌ Mic start failed: {e}")
+            logger.error(f"Mic start failed: {e}")
             if retry and self.session_active.is_set():
                 # Kick off a retry loop (non-blocking)
                 asyncio.create_task(self._retry_mic_loop())
@@ -445,7 +453,7 @@ class BillySession:
             try:
                 self.mic.stop()
             except Exception as e:
-                print(f"⚠️ Error while stopping mic: {e}")
+                logger.warning(f"Error while stopping mic: {e}")
             self.mic_running = False
 
     async def _retry_mic_loop(self):
@@ -454,7 +462,7 @@ class BillySession:
         while we wait for the input device to become available again.
         """
         if DEBUG_MODE:
-            print("🔁 Mic retry loop started")
+            logger.verbose("Mic retry loop started", "🔁")
 
         # Small, bounded backoff: 0.5s → 1s → 2s → 2s → …
         delays = [0.5, 1.0, 2.0, 2.0, 2.0]
@@ -469,13 +477,13 @@ class BillySession:
                 self.mic = MicManager()
             except Exception as e:
                 if DEBUG_MODE:
-                    print(f"⚠️ MicManager recreate failed: {e}")
+                    logger.warning(f"MicManager recreate failed: {e}")
 
             try:
                 self.mic.start(self.mic_callback)
                 self.mic_running = True
                 if DEBUG_MODE:
-                    print("✅ Mic started after retry")
+                    logger.success("Mic started after retry")
                 if not self.mic_timeout_task or self.mic_timeout_task.done():
                     self.mic_timeout_task = asyncio.create_task(
                         self.mic_timeout_checker()
@@ -487,7 +495,9 @@ class BillySession:
                 print(f"❌ Mic retry failed: {e}")
 
         # All retries exhausted
-        print("🛑 Mic unavailable after retries; keeping session but not listening.")
+        logger.error(
+            "Mic unavailable after retries; keeping session but not listening."
+        )
 
     # ------------------------------------------------------------------
 
@@ -511,7 +521,9 @@ class BillySession:
                 # Progressive delay: longer waits for later attempts
                 if attempt > 1:
                     wait_time = delay * (attempt - 1) + 0.5
-                    print(f"⏳ Waiting {wait_time:.1f}s before mic retry {attempt}...")
+                    logger.info(
+                        f"Waiting {wait_time:.1f}s before mic retry {attempt}...", "⏳"
+                    )
                     await asyncio.sleep(wait_time)
 
                 # Ensure mic is fully stopped before retry
@@ -530,7 +542,7 @@ class BillySession:
                 print(f"🎙️ Mic opened (attempt {attempt}).")
                 return True
             except Exception as e:
-                print(f"⚠️ Mic open failed (attempt {attempt}/{retries}): {e}")
+                logger.warning(f"Mic open failed (attempt {attempt}/{retries}): {e}")
                 # For ALSA device unavailable errors, try to reset audio system
                 if "Device unavailable" in str(e) and attempt < retries:
                     print("🔄 Attempting audio system reset...")
@@ -544,14 +556,14 @@ class BillySession:
                         )
                         await asyncio.sleep(1.0)
                     except Exception as reset_error:
-                        print(f"⚠️ Audio reset failed: {reset_error}")
+                        logger.warning(f"Audio reset failed: {reset_error}")
 
-        print("🛑 Mic failed to open after retries.")
+        logger.error("Mic failed to open after retries.")
         return False
 
     async def start(self):
         self.loop = asyncio.get_running_loop()
-        print("\n⏱️ Session starting...")
+        logger.info("Session starting...", "⏱️")
 
         self.audio_buffer.clear()
         self.committed = False
@@ -672,7 +684,7 @@ class BillySession:
 
         # Log once when mic data starts being sent after wake-up sound
         if not hasattr(self, '_mic_data_started') and not TEXT_ONLY_MODE:
-            print("🎤 Mic data now being sent (wake-up sound finished)")
+            logger.info("Mic data now being sent (wake-up sound finished)", "🎤")
             self._mic_data_started = True
 
         samples = indata[:, 0]
@@ -680,7 +692,7 @@ class BillySession:
         self.last_rms = rms
 
         if DEBUG_MODE:
-            print(f"\r🎙 Mic Volume: {rms:.1f}     ", end='', flush=True)
+            logger.verbose(f"Mic Volume: {rms:.1f}", "🎙")
 
         if rms > SILENCE_THRESHOLD:
             self.last_activity[0] = time.time()
@@ -692,10 +704,11 @@ class BillySession:
         if not TEXT_ONLY_MODE and audio.playback_done_event.is_set():
             await asyncio.to_thread(audio.playback_done_event.wait)
 
-        print(
-            "🎙️ Mic stream active. Say something..."
+        logger.info(
+            "Mic stream active. Say something..."
             if not self.kickoff_text
-            else "📣 Announcing kickoff..."
+            else "Announcing kickoff...",
+            "🎙️" if not self.kickoff_text else "📣",
         )
         mqtt_publish(
             "billy/state", "listening" if not self.kickoff_text else "speaking"
@@ -715,7 +728,7 @@ class BillySession:
                     DEBUG_MODE_INCLUDE_DELTA
                     or not (data.get("type") or "").endswith("delta")
                 ):
-                    print(f"\n🔁 Raw message: {data} ")
+                    logger.verbose(f"Raw message: {data}", "🔁")
 
                 if data.get("type") in ("session.updated", "session_updated"):
                     self.session_initialized = True
@@ -723,20 +736,20 @@ class BillySession:
                 await self.handle_message(data)
 
         except Exception as e:
-            print(f"❌ Error opening mic input: {e}")
+            logger.error(f"Error opening mic input: {e}")
             self.session_active.clear()
 
         finally:
             try:
                 self._stop_mic()
-                print("🎙️ Mic stream closed.")
+                logger.info("Mic stream closed.", "🎙️")
             except Exception as e:
-                print(f"⚠️ Error while stopping mic: {e}")
+                logger.warning(f"Error while stopping mic: {e}")
 
             try:
                 await self.post_response_handling()
             except Exception as e:
-                print(f"⚠️ Error in post_response_handling: {e}")
+                logger.warning(f"Error in post_response_handling: {e}")
 
     async def handle_message(self, data):
         t = data.get("type") or ""
@@ -775,13 +788,13 @@ class BillySession:
             code = error.get("code", "error").lower()
             message = error.get("message", "Unknown error")
             code = "noapikey" if "invalid_api_key" in code else "error"
-            print(f"\n🛑 API Error ({code}): {message}")
+            logger.error(f"API Error ({code}): {message}")
             await self._play_error_sound(code, message)
             return
         # else: ignore unrecognized messages silently
 
     async def mic_timeout_checker(self):
-        print("🛡️ Mic timeout checker active")
+        logger.info("Mic timeout checker active", "🛡️")
         last_tail_move = 0
 
         while self.session_active.is_set():
@@ -811,8 +824,9 @@ class BillySession:
                     last_tail_move = now
 
                 if elapsed > MIC_TIMEOUT_SECONDS:
-                    print(
-                        f"\n⏱️ No mic activity for {MIC_TIMEOUT_SECONDS}s. Ending input..."
+                    logger.info(
+                        f"No mic activity for {MIC_TIMEOUT_SECONDS}s. Ending input...",
+                        "⏱️",
                     )
                     await self.stop_session()
                     break
@@ -820,10 +834,12 @@ class BillySession:
             await asyncio.sleep(0.5)
 
     async def post_response_handling(self):
-        print(f"\n🧠 Full response: {self.full_response_text.strip()} ")
+        logger.verbose(f"Full response: {self.full_response_text.strip()}", "🧠")
 
         if not self.session_active.is_set():
-            print("🚪 Session inactive after timeout or interruption. Not restarting.")
+            logger.info(
+                "Session inactive after timeout or interruption. Not restarting.", "🚪"
+            )
             mqtt_publish("billy/state", "idle")
             stop_all_motors()
             async with self.ws_lock:
@@ -836,12 +852,12 @@ class BillySession:
         # Heuristic fallback (punctuation only)
         asked_question = self._wants_follow_up_heuristic()
         if DEBUG_MODE:
-            print(
-                "🧪 follow-up decision"
-                f" | mode={self.autofollowup}"
+            logger.verbose(
+                f"follow-up decision | mode={self.autofollowup}"
                 f" | tool_expects={self.follow_up_expected}"
                 f" | qmark={asked_question}"
-                f" | had_speech={self._turn_had_speech}"
+                f" | had_speech={self._turn_had_speech}",
+                "🧪",
             )
 
         if self.autofollowup == "always":
@@ -852,10 +868,12 @@ class BillySession:
             wants_follow_up = self.follow_up_expected or asked_question
 
         if DEBUG_MODE and not self._saw_follow_up_call:
-            print("⚠️ follow_up_intent not called this turn; using heuristic instead.")
+            logger.warning(
+                "follow_up_intent not called this turn; using heuristic instead."
+            )
 
         if wants_follow_up:
-            print("🔁 Follow-up expected. Keeping session open.")
+            logger.info("Follow-up expected. Keeping session open.", "🔁")
             mqtt_publish("billy/state", "listening")
             await self._start_mic_after_playback()  # <-- changed
             self.user_spoke_after_assistant = False
@@ -863,7 +881,7 @@ class BillySession:
             self.last_activity[0] = time.time()
             return
 
-        print("🛑 No follow-up. Ending session.")
+        logger.info("No follow-up. Ending session.", "🛑")
         mqtt_publish("billy/state", "idle")
         stop_all_motors()
         async with self.ws_lock:
@@ -873,7 +891,7 @@ class BillySession:
                 self.ws = None
 
     async def stop_session(self):
-        print("🛑 Stopping session...")
+        logger.info("Stopping session...", "🛑")
         self.session_active.clear()
         self._stop_mic()
 
@@ -885,14 +903,14 @@ class BillySession:
                     try:
                         await asyncio.wait_for(self.ws.wait_closed(), timeout=2.0)
                     except asyncio.TimeoutError:
-                        print("⚠️ Websocket close timeout, forcing cleanup")
+                        logger.warning("Websocket close timeout, forcing cleanup")
                 except Exception as e:
-                    print(f"⚠️ Error closing websocket: {e}")
+                    logger.warning(f"Error closing websocket: {e}")
                 finally:
                     self.ws = None
 
     async def request_stop(self):
-        print("🛑 Stop requested via external signal.")
+        logger.info("Stop requested via external signal.", "🛑")
         self.session_active.clear()
 
     async def _play_error_sound(self, code: str = "error", message: str | None = None):
@@ -908,13 +926,13 @@ class BillySession:
         filename = f"{code}.wav"
         sound_path = os.path.join("sounds", filename)
 
-        print(f"🛑 Error ({code}): {message or 'No message'}")
-        print(f"🔊 Attempting to play {filename}...")
+        logger.error(f"Error ({code}): {message or 'No message'}")
+        logger.info(f"Attempting to play {filename}...", "🔊")
 
         if os.path.exists(sound_path):
             await asyncio.to_thread(audio.enqueue_wav_to_playback, sound_path)
             await asyncio.to_thread(audio.playback_queue.join)
         else:
-            print(f"⚠️ {sound_path} not found, skipping audio playback.")
+            logger.warning(f"{sound_path} not found, skipping audio playback.")
 
         await self.stop_session()

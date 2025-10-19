@@ -60,7 +60,7 @@
         </div>
 
 
-        <div id="version-info" class="text-sm flex flex-col md:items-end relative inline-block">
+        <div id="version-info" class="text-sm flex flex-col md:items-end relative">
             <button id="current-version"
                     class="bg-zinc-700 hover:bg-zinc-600 transition-all text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
                     title="Show release notes & support">
@@ -86,6 +86,35 @@
 
     <!-- Log Panel -->
     <section id="log-panel" class="mt-2 relative hidden">
+        <!-- Log Level Control -->
+        <div class="p-3 bg-zinc-800/50 rounded border border-zinc-600 flex gap-3 justify-between items-center flex-wrap">
+            <div class="text-xs text-gray-400 align-center">
+                <span class="material-icons text-xs text-red-400 align-middle">error</span>
+                <strong>Error:</strong> Only critical failures •
+                <span class="material-icons text-xs text-yellow-400 align-middle">warning</span>
+                <strong>Warning:</strong> + recoverable issues •
+                <span class="material-icons text-xs text-blue-400 align-middle">info</span>
+                <strong>Info:</strong> + normal operations •
+                <span class="material-icons text-xs text-purple-400 align-middle">search</span>
+                <strong>Verbose:</strong> + debug details
+            </div>
+            <div class="flex items-center gap-3">
+                <label for="log-level-select" class="text-sm font-medium text-gray-200">
+                    Log Level:
+                </label>
+                <select id="log-level-select"
+                        class="bg-zinc-700 text-white text-sm px-3 py-1 rounded border border-zinc-600 focus:border-cyan-500 focus:outline-none">
+                    <option value="ERROR">Error</option>
+                    <option value="WARNING">Warning</option>
+                    <option value="INFO" selected>Info</option>
+                    <option value="VERBOSE">Verbose</option>
+                </select>
+                <button id="apply-log-level-btn"
+                        class="bg-cyan-500 hover:bg-cyan-400 text-white text-sm font-semibold py-1 px-3 rounded shadow">
+                    Apply
+                </button>
+            </div>
+        </div>
         <!-- Normal Log View -->
         <div id="log-container"
              class="relative rounded px-2 max-h-96 overflow-y-scroll text-sm transition-all duration-300 border border-cyan-500 bg-zinc-800/80 ">
@@ -112,6 +141,7 @@
     <!-- Env Panel -->
     <section id="env-panel" class="mt-2 relative hidden">
         <div class="relative rounded  text-sm transition-all duration-300  text-white">
+            <label for="env-textarea" class="sr-only">Environment Configuration</label>
             <textarea id="env-textarea" rows="25"
                       class="w-full h-64  bg-zinc-800/80 text-amber-500 p-3 rounded font-mono resize-y border border-yellow-600"
                       spellcheck="false">Loading .env…</textarea>
@@ -160,7 +190,7 @@
                            href="#"
                            target="_blank"
                            rel="noopener"
-                           class="hidden inline-flex items-center gap-1 text-emerald-300 hover:text-emerald-200 mt-3">
+                           class="hidden items-center gap-1 text-emerald-300 hover:text-emerald-200 mt-3">
                             <span class="material-icons text-xs" aria-hidden="true">open_in_new</span>
                             <span class="underline">View on GitHub</span>
                         </a>

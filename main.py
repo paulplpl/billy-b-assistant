@@ -6,6 +6,8 @@ import threading
 import traceback
 from pathlib import Path
 
+from core.logger import logger
+
 
 # --- Ensure .env exists ---
 def ensure_env_file():
@@ -35,12 +37,19 @@ load_dotenv()
 # --- Imports that might use environment variables ---
 import core.button
 from core.audio import playback_queue
+
+# --- Reload logger level after environment is loaded ---
+from core.logger import reload_log_level
 from core.movements import start_motor_watchdog, stop_all_motors
 from core.mqtt import start_mqtt, stop_mqtt
 
 
+current_level = reload_log_level()
+print(f"🔧 Log level set to: {current_level.name}")
+
+
 def signal_handler(sig, frame):
-    print("\n👋 Exiting cleanly (signal received).")
+    logger.info("Exiting cleanly (signal received).", "👋")
     playback_queue.put(None)
     stop_all_motors()
     stop_mqtt()

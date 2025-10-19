@@ -167,6 +167,7 @@ All notable changes to this project will be documented in this file.
 ## [1.6.0] — 2025-10-19
 
 ### Added
+- **Configurable Logging System**: New centralized logging with 4 levels (ERROR, WARNING, INFO, VERBOSE) controlled via UI dropdown
 - **Mouth Articulation Slider**: New UI slider (1-10) to control mouth movement responsiveness - lower values = snappy movements, higher values = smoother movements
 - **Self-Trigger Prevention**: Billy no longer hears his own wake-up sounds - mic data is blocked until wake-up sound completes
 - **Enhanced Mic Error Recovery**: Improved ALSA device handling with progressive retry delays and fallback to default audio device
@@ -174,6 +175,7 @@ All notable changes to this project will be documented in this file.
 - **Flask Application Factory**: Restructured webconfig as proper Flask blueprints for better maintainability
 
 ### Changed
+- **Logging System**: Replaced DEBUG_MODE with configurable LOG_LEVEL system - all print statements converted to structured logging
 - **Web UI Architecture**: Split monolithic `index.html` into modular Jinja2 components for better organization
 - **Settings Persistence**: Improved dropdown value persistence using localStorage for immediate visual feedback
 - **Support Panel**: Merged support information into release notes panel for cleaner UI

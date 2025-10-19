@@ -8,11 +8,12 @@ import lgpio
 import numpy as np
 
 from .config import BILLY_PINS, MOUTH_ARTICULATION, is_classic_billy
+from .logger import logger
 
 
 # === Configuration ===
 USE_THIRD_MOTOR = is_classic_billy()
-print(f"⚙️ Using third motor: {USE_THIRD_MOTOR} | Pin profile: {BILLY_PINS}")
+logger.info(f"Using third motor: {USE_THIRD_MOTOR} | Pin profile: {BILLY_PINS}", "⚙️")
 
 # === GPIO Setup ===
 h = lgpio.gpiochip_open(0)
@@ -220,7 +221,7 @@ def _interlude_routine():
             time.sleep(random.uniform(0.25, 0.9))
         if random.random() < 0.9:
             move_head("on")
-            print(f"⚠️ Interlude MOVE HEAD ON")
+            # Head movement during interlude (no logging needed)
             # Auto-turn off head after max 3 seconds to prevent getting stuck
             threading.Timer(5.0, lambda: move_head("off")).start()
     except Exception as e:
@@ -280,7 +281,7 @@ def _pin_is_active(pin: int) -> bool:
 
 
 def stop_all_motors():
-    print("🛑 Stopping all motors")
+    logger.info("Stopping all motors", "🛑")
     for pin in motor_pins:
         clear_pwm(pin)
         lgpio.gpio_write(h, pin, 0)
@@ -307,8 +308,9 @@ def motor_watchdog():
                     since_on[pin] = now
                 else:
                     if (now - since_on[pin]) >= WATCHDOG_TIMEOUT_SEC:
-                        print(
-                            f"⏱️ Watchdog: pin {pin} active > {WATCHDOG_TIMEOUT_SEC}s → braking channel"
+                        logger.warning(
+                            f"Watchdog: pin {pin} active > {WATCHDOG_TIMEOUT_SEC}s → braking channel",
+                            "⏱️",
                         )
                         _stop_channel(pin)
                         since_on[pin] = None

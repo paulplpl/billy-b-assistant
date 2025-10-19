@@ -88,6 +88,8 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 VOICE = os.getenv("VOICE", "ash")
 
 # === Modes ===
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Legacy DEBUG_MODE for backward compatibility
 DEBUG_MODE = os.getenv("DEBUG_MODE", "true").lower() == "true"
 DEBUG_MODE_INCLUDE_DELTA = (
     os.getenv("DEBUG_MODE_INCLUDE_DELTA", "false").lower() == "true"
