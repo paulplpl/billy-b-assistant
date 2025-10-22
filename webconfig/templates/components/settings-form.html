@@ -1,11 +1,12 @@
 <!-- Settings Form -->
 <section>
-    <form id="config-form" class="p-4 md:p-6">
+    <form id="config-form" class="p-4">
 
         <!-- Software Settings -->
-        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-software">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">settings</span>
                 Software Settings
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
             </h3>
@@ -150,19 +151,6 @@
                 </div>
             </div>
 
-            <div class="mb-4 relative">
-                <label for="VOICE" class="block font-semibold text-sm text-slate-300">Voice
-                </label>
-                <select id="VOICE" name="VOICE"
-                        class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                    {% for v in config.get('VOICE_OPTIONS',[]) %}
-                    <option value="{{ v }}" {% if config.get(
-                    'VOICE') == v %}selected{% endif %}>
-                    {{ v|capitalize }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
 
             <div class="mb-4">
                 <label for="TURN_EAGERNESS"
@@ -188,12 +176,14 @@
                     </select>
                 </div>
             </div>
+
         </div>
 
         <!-- Hardware Settings -->
-        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-hardware">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">build</span>
                 Hardware Settings
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
             </h3>
@@ -272,9 +262,10 @@
         </div>
 
         <!-- Audio -->
-        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-audio">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">volume_up</span>
                 Audio Settings
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
             </h3>
@@ -462,9 +453,10 @@
         </div>
 
         <!-- MQTT Settings -->
-        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-mqtt">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">cloud_queue</span>
                 MQTT Settings
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
             </h3>
@@ -516,9 +508,10 @@
         </div>
 
         <!-- Home Assistant -->
-        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 md:p-6 rounded-lg shadow-sm mb-6 collapsible-section"
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-ha">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">home</span>
                 Home Assistant
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
             </h3>

@@ -1,7 +1,42 @@
+import subprocess
+
 import sounddevice as sd
 
 from . import audio as audio
 from .logger import logger
+
+
+def diagnose_audio_issues():
+    """Diagnose common audio issues that might cause mic failures."""
+    logger.info("Running audio diagnostics...", "🔍")
+
+    try:
+        # Check for processes using audio devices
+        result = subprocess.run(
+            ["lsof", "/dev/snd/*"], capture_output=True, text=True, timeout=5
+        )
+        if result.stdout:
+            logger.warning("Processes using audio devices:")
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    logger.warning(f"  {line}")
+        else:
+            logger.info("No processes found using audio devices", "✅")
+    except Exception as e:
+        logger.warning(f"Could not check audio device usage: {e}")
+
+    try:
+        # Check ALSA status
+        result = subprocess.run(
+            ["cat", "/proc/asound/cards"], capture_output=True, text=True, timeout=3
+        )
+        if result.stdout:
+            logger.info("ALSA sound cards:")
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    logger.info(f"  {line}")
+    except Exception as e:
+        logger.warning(f"Could not check ALSA cards: {e}")
 
 
 class MicManager:
@@ -39,6 +74,13 @@ class MicManager:
                     logger.success("Mic opened with default device")
                 except Exception as fallback_error:
                     logger.error(f"Fallback mic open also failed: {fallback_error}")
+                    # For ALSA device unavailable errors, provide more helpful error message
+                    if "Device unavailable" in str(e):
+                        logger.error("ALSA device unavailable. This usually means:")
+                        logger.error("1. Another process is using the audio device")
+                        logger.error("2. Audio driver needs to be reset")
+                        logger.error("3. Hardware connection issue")
+                        diagnose_audio_issues()
                     raise e  # Re-raise original error
             else:
                 raise e

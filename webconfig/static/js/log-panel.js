@@ -140,22 +140,13 @@ const LogPanel = (() => {
 
     const checkAndShowPasswordModal = (cfg) => {
         // Show modal automatically if FORCE_PASS_CHANGE is true
-        if (cfg.FORCE_PASS_CHANGE==='True') {
+        if (cfg.FORCE_PASS_CHANGE === 'True' || cfg.FORCE_PASS_CHANGE === 'true' || cfg.FORCE_PASS_CHANGE === true) {
             setTimeout(() => {
                 showPasswordModal();
             }, 1000); // Small delay to let page load
         }
     };
 
-    const hidePasswordButtonIfChanged = (cfg) => {
-        // Hide password change button if FORCE_PASS_CHANGE is false (password already changed)
-        if (!cfg.FORCE_PASS_CHANGE) {
-            const changePasswordBtn = document.getElementById("change-password-btn");
-            if (changePasswordBtn) {
-                changePasswordBtn.style.display = "none";
-            }
-        }
-    };
 
 
     const applyLogLevel = async () => {
@@ -170,18 +161,13 @@ const LogPanel = (() => {
             });
             const data = await res.json();
             if (data.status === "ok") {
-                showNotification(`Log level changed to ${selectedLevel}. Restarting Billy and UI...`, "success");
+                showNotification(`Log level changed to ${selectedLevel}. Restarting Billy`, "success");
                 
                 // Restart both Billy service and webconfig service
                 setTimeout(async () => {
                     try {
-                        // Restart Billy service
-                        await fetch("/service/restart", {method: "POST"});
-                        
-                        // Small delay then restart webconfig
-                        setTimeout(async () => {
-                            await fetch("/restart", {method: "POST"});
-                        }, 2000);
+                        // Restart both services
+                        await fetch("/restart", {method: "POST"});
                         
                     } catch (restartErr) {
                         console.error("Failed to restart services:", restartErr);
@@ -329,7 +315,6 @@ const LogPanel = (() => {
             powerDropdown: document.getElementById("power-dropdown"),
             rebootBillyBtn: document.getElementById("reboot-billy-btn"),
             restartUIBtn: document.getElementById("restart-ui-btn"),
-            changePasswordBtn: document.getElementById("change-password-btn"),
             shutdownBillyBtn: document.getElementById("shutdown-billy-btn"),
             toggleReleaseBtn: document.getElementById("current-version"),
             releasePanel: document.getElementById("release-panel"),
@@ -362,7 +347,6 @@ const LogPanel = (() => {
         elements.saveEnvBtn.addEventListener("click", saveEnv);
         elements.rebootBillyBtn.addEventListener("click", rebootBilly);
         elements.restartUIBtn.addEventListener("click", restartUI);
-        elements.changePasswordBtn?.addEventListener("click", showPasswordModal);
         elements.shutdownBillyBtn.addEventListener("click", shutdownBilly);
         
         // Log level control
@@ -392,13 +376,15 @@ const LogPanel = (() => {
 
         // Handle password change modal and button visibility
         checkAndShowPasswordModal(cfg);
-        hidePasswordButtonIfChanged(cfg);
         
         // Handle support panel visibility
         hideSupportPanelIfDisabled(cfg);
     };
 
-    return {fetchLogs, bindUI, changePassword, showPasswordModal, checkAndShowPasswordModal, hidePasswordButtonIfChanged, hideSupportPanelIfDisabled};
+    return {fetchLogs, bindUI, changePassword, showPasswordModal, checkAndShowPasswordModal, hideSupportPanelIfDisabled};
 })();
+
+// Make LogPanel available globally
+window.LogPanel = LogPanel;
 
 

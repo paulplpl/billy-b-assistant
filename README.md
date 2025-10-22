@@ -421,7 +421,7 @@ ALLOW_UPDATE_PERSONALITY_INI=true
 ```
 
 **OPENAI_API_KEY**: (Required) get it from <https://platform.openai.com/api-keys>  
-**VOICE**: The OpenAI voice model to use (`onyx`, `shimmer`, `nova`, `echo`, `fable`, `alloy`, or `ballad`, `ash` is default)  
+**VOICE**: The OpenAI voice model to use (`alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, or `cedar`, `ballad` is default)  
 **MQTT_\***: (Optional) used if you want to integrate Billy with Home Assistant or another MQTT broker  
 **MIC_TIMEOUT_SECONDS**: How long Billy should wait after your last mic activity before ending input  
 **SILENCE_THRESHOLD**: Audio threshold (RMS) for what counts as mic input;lower this value if Billy interrupts you too quickly, set higher if Billy doesn't respond (because he thinks you're still talking)  

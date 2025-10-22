@@ -1,6 +1,6 @@
 # Billy B-Assistant — Personal and Educational Use License #  
 
-Copyright (c) 2025 Thom Koopman
+Copyright (c) 2025 Thom Koopman (ThingsFromThom)
 
 This project is made available free of charge for **personal, non-commercial, and educational use**.
 

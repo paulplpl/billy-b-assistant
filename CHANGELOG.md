@@ -4,74 +4,105 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [1.0.0] — 2025-05-25
-### Initial Version
-**Core Functionality**
-- Real-time, full-duplex voice assistant powered by OpenAI GPT-4o.
-- Assistant input/output using `sounddevice` with a push-button session trigger.
-- Streaming response handling with chunked playback and lip-syncing via RMS analysis.
-- Motor control using Raspberry Pi GPIO:
-    - PWM-based mouth movement synchronized to speech.
-    - Head and tail motion via H-bridge motor drivers.
+## [2.0.0] — 2025-10-22
 
-**Personality System**
-- Configurable personality traits via `persona.ini` with real-time runtime updates using function calling.
-- Trait categories include: `humor`, `sarcasm`, `honesty`, `confidence`, `verbosity`, `curiosity`, and more.
-- Backstory and behavioral instructions stored in `persona.ini` with structured `[PERSONALITY]`, `[BACKSTORY]`, and `[META]` sections.
+### Major Features
 
-**Hardware & Setup**
-- 3D-printable backplate to mount USB microphone and speaker in the Billy Bass enclosure.
-- GPIO safe boot state configuration to prevent motor activation during Pi startup.
-- Systemd integration (`billy.service`) for background operation and autostart at boot.
-
-**Audio System**
-- Configurable voice model (`VOICE`) via `.env` file.
-- Adjustable silence threshold and mic timeout for voice session logic.
-
-**MQTT Integration (Optional)**
-- Basic MQTT connectivity for status reporting, safe shutdown Raspberry Pi command and future integration with Home Assistant.
-
-**Song Mode**
-- Folder-based song playback system supporting:
-    - `full.wav` for audio
-    - `vocals.wav` and `drums.wav` for animated flapping (mouth and tail)
-    - `metadata.txt` to control animation timing and motion profiles
-- Function-calling support to trigger songs via conversation with Billy.
-
-## [1.1.0] — 2025-07-18
-### Adds initial version of Home Assistant API integration and major stability improvements.
+- **User Profiles**: Individual user profiles with aliases, memories, and preferred personas
+- **Multiple Personas**: Support for different Billy personalities (default, billy-g, pirate, etc.)
+- **Custom Wake-up Sounds**: Generate and store persona-specific wake-up clips
+- **Smart Greetings**: Context-aware greetings based on time of day and interaction history
 
 ### Added
 
-- Initial integration with Home Assistant's conversation API.
-- Graceful fallback when Home Assistant is not configured.
-- New environment variable `ALLOW_UPDATE_PERSONALITY_INI` to prevent users from permanently changing Billy's personality traits.
-- Wake-up audio now blocks the assistant from listening until playback is complete.
-- Retain reference to mic checker task to avoid premature destruction.
-- Added Ruff linter with configuration and a pre-commit hook.
-- Added `CHANGELOG.md`.
+- **User Management**: Create and switch between user profiles with individual settings
+- **Persona System**: Create, edit, and switch between different Billy personalities
+- **Memory System**: Billy remembers user preferences, facts, and relationships
+- **Guest Mode**: Support for guest users with default persona
+- **Wake-up Sound Generation**: AI-generated custom wake-up clips per persona
+- **Configurable Logging**: 4-level logging system (ERROR, WARNING, INFO, VERBOSE)
+- **Mouth Articulation Control**: Slider (1-10) to control speech movement responsiveness
 
 ### Changed
 
-- Audio session now ensures WebSocket session is created before sending audio.
-- All audio sends are awaited to prevent race conditions.
-- WebSocket connections now use additional mutex locking to avoid lifecycle errors.
-- Improved full audio transcript logging with newlines.
-- Error responses from the assistant API are now shown clearly in the output stream.
-- Cleaned up import statements and used proper relative imports.
-- MQTT logic now checks if MQTT is configured before sending or receiving.
+- **Session Management**: Enhanced with user context and persona switching
+- **Audio System**: Persona-specific wake-up sound directories
+- **Logging System**: Replaced DEBUG_MODE with configurable LOG_LEVEL system
+- **Session Flow**: Sessions start immediately but delay mic data until wake-up sound finishes
 
 ### Fixed
 
-- Fixed race condition where audio might be sent before the session is initialized.
-- Prevented audio from being interpreted when `self.ws` is unexpectedly reset.
-- Suppressed redundant session-end output.
-- Addressed expected `CancelledError` when stopping sessions.
-- Removed duplicate and unused imports and functions.
-- Removed duplicate `aiohttp` dependency from `requirements.txt`.
-- Fixed potential undefined variable.
-- Fixed usage of legacy `websockets` API.
-- Added missing dependencies: `aiohttp`, `lgpio`.
+- **Self-Triggering**: Billy no longer hears his own wake-up sounds
+- **Head Movement**: Prevented head from getting stuck during routines
+- **Session Hanging**: Added timeouts to prevent stuck sessions
+
+---
+
+## [1.5.0] — 2025-10-13
+
+>### ⚠️ For existing builds of Billy: ⚠️ 
+> 
+> **Please select the Legacy Pin Layout in the Hardware Settings tab of the Web UI if you can't switch to the new unified wiring layout (see [BUILDME.md](./docs/BUILDME.md#from-motor-driver-to-raspberry-pi-gpio-pinout))**
+
+### Added
+- **Configurable Pin Layouts:** Introduced `BILLY_PINS` Pin Layout setting (`new` / `legacy`) to switch between the new (default) pin layout and the legacy pin layout (for builds before october '25)
+- **Mouth Articulation Control:** Added `MOUTH_ARTICULATION` (1–10) setting to fine-tune speech motion responsiveness.
+- **Error Sound Handling:**  Centralized error playback — now plays `error.wav`, `noapikey.wav`, or `nowifi.wav` depending on the issue.
+- **Release notes notification:** Notification in the UI with the release notes of the latest version.
+
+### Changed
+- **Unified GPIO Logic:** Refactored motor control for both Modern (2-motor) and Classic (3-motor) models into a single system. Default pin assignments moved to safer GPIOs. Unused H-bridge inputs are now grounded;
+- **Movement Refinements:** Improved PWM handling and non-blocking motion timing for smoother, more natural flapping.
+- **UI Enhancements:** Added Billy artwork to header and included reboot/power/restart-ui buttons. Improved feedback for mic and speaker device tests.
+
+### Fixed
+- Minor mouth sync inconsistencies under load.
+- Occasional stalls caused by blocking PWM threads.
+- Better recovery after OpenAI API or network errors.
+- Motor watchdog will now disengage any motor that is on > 30 seconds
+
+## [1.4.0] — 2025-09-04
+
+### Added
+
+- **Say command**: Added a MQTT command to let billy announce messages, either as literal sentences or as prompts.
+- **Custom Wake-up Sounds**: Custom Wake-up sounds can now be customised and generated via the UI
+- **New gpt-realtime model**: Added Support for the new stable release of the openAI Realtime API model.
+- **Favicon**: No more 404
+
+### Changed
+
+- Improved update process by re-installing python requirements on software update
+- Updated personality traits prompt to be more descriptive and more distinct.
+- Disabled Flask debug mode by default.
+
+## [1.3.1] — 2025-08-19
+
+### Added
+
+- **Shutdown and restart**: Added raspberry pi shutdown and restart buttons in the UI (contribution by @cprasmu )
+
+## [1.3.0] — 2025-07-28
+
+### Added
+
+- **'Dory' Mode**: Optional single-response mode where Billy answers only once before ending the session. (requested by @kenway33 )
+- **Motor Test UI**: New motor test buttons in the Hardware tab allow triggering mouth and head/tail motion directly from the web interface. (requested by @henrym9)
+- **Hostname + Port Configuration**: Added settings for customizing the device's hostname and Flask web port via UI. (requested by @cprasmu)
+- **Import/Export**: Added ability to upload/download both `.env` and `persona.ini` files from the web UI.
+
+### Changed
+
+- Improved internal JS structure and modularization.
+- Minor refinements to input label styling.
+- Improved UX:
+  - Added collapsible UI sections
+  - **Reduced Motion Mode**: New UI toggle to disable animations and backdrop blur for accessibility or preference. Setting persists in local storage.
+  - **Tooltips**: Informational tooltips added to multiple UI elements for better user guidance.
+
+### Fixed
+
+- **Motor Retract Fix**: Ensures Billy's head reliably returns to neutral after session ends.
 
 ## [1.2.0] — 2025-07-24
 
@@ -163,27 +194,3 @@ All notable changes to this project will be documented in this file.
 - Occasional stalls caused by blocking PWM threads.
 - Better recovery after OpenAI API or network errors.
 - Motor watchdog will now disengage any motor that is on > 30 seconds
-
-## [1.6.0] — 2025-10-19
-
-### Added
-- **Configurable Logging System**: New centralized logging with 4 levels (ERROR, WARNING, INFO, VERBOSE) controlled via UI dropdown
-- **Mouth Articulation Slider**: New UI slider (1-10) to control mouth movement responsiveness - lower values = snappy movements, higher values = smoother movements
-- **Self-Trigger Prevention**: Billy no longer hears his own wake-up sounds - mic data is blocked until wake-up sound completes
-- **Enhanced Mic Error Recovery**: Improved ALSA device handling with progressive retry delays and fallback to default audio device
-- **Modular Web UI**: Refactored web interface into reusable components (header, settings forms, password modal)
-- **Flask Application Factory**: Restructured webconfig as proper Flask blueprints for better maintainability
-
-### Changed
-- **Logging System**: Replaced DEBUG_MODE with configurable LOG_LEVEL system - all print statements converted to structured logging
-- **Web UI Architecture**: Split monolithic `index.html` into modular Jinja2 components for better organization
-- **Settings Persistence**: Improved dropdown value persistence using localStorage for immediate visual feedback
-- **Support Panel**: Merged support information into release notes panel for cleaner UI
-- **Mic Error Handling**: Enhanced retry logic with progressive delays (0.6s, 1.1s, 1.6s) and audio system reset attempts
-- **Session Flow**: Sessions now start immediately but delay mic data transmission until wake-up sound finishes
-
-### Fixed
-- **Head Movement Stuck**: Prevented head from staying extended indefinitely during interlude routines
-- **Self-Triggering**: Eliminated Billy hearing and responding to his own (long) wake-up sounds
-- **ALSA Device Conflicts**: Improved audio device handoff between playback and recording
-- **Session Hanging**: Added timeouts to prevent sessions from getting stuck in "Stopping active session" state

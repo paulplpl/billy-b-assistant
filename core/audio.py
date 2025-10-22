@@ -295,15 +295,41 @@ def enqueue_wav_to_playback(filepath):
 
 def play_random_wake_up_clip():
     """Select and enqueue a random wake-up WAV file with mouth movement."""
-    # Check custom folder first
-    clips = glob.glob(os.path.join(WAKE_UP_DIR, "*.wav"))
+    clips = []
 
+    # First, try to get current persona and check appropriate directory
+    try:
+        from .persona_manager import persona_manager
+
+        current_persona = persona_manager.current_persona
+        if current_persona and current_persona != "default":
+            # For non-default personas, check persona-specific directory
+            persona_wakeup_dir = os.path.join("personas", current_persona, "wakeup")
+            if os.path.exists(persona_wakeup_dir):
+                clips = glob.glob(os.path.join(persona_wakeup_dir, "*.wav"))
+                if clips:
+                    print(f"🎭 Using wake-up clips from persona: {current_persona}")
+        elif current_persona == "default":
+            # For default persona, use the custom folder
+            clips = glob.glob(os.path.join(WAKE_UP_DIR, "*.wav"))
+            if clips:
+                print("🔧 Using custom wake-up clips for default persona")
+    except Exception as e:
+        print(f"⚠️ Failed to get current persona: {e}")
+
+    # If no clips found yet, check custom folder as fallback
+    if not clips:
+        clips = glob.glob(os.path.join(WAKE_UP_DIR, "*.wav"))
+        if clips:
+            print("🔧 Using custom wake-up clips (fallback)")
+
+    # If still no clips, fall back to default
     if not clips:
         print("🔁 No custom clips found, falling back to default.")
         clips = glob.glob(os.path.join(WAKE_UP_DIR_DEFAULT, "*.wav"))
 
     if not clips:
-        print("⚠️ No wake-up clips found in either custom or default.")
+        print("⚠️ No wake-up clips found in any directory.")
         return None
 
     clip = random.choice(clips)

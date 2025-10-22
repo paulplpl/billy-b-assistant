@@ -50,8 +50,8 @@ const SettingsForm = (() => {
         document.getElementById("config-form").addEventListener("submit", async function (e) {
             e.preventDefault();
 
-            const resStatus = await fetch("/service/status");
-            await resStatus.json(); // Check service status
+            const statusData = await ServiceStatus.fetchStatus();
+            const wasActive = statusData.status;
 
             const formData = new FormData(this);
             const payload = Object.fromEntries(formData.entries());
@@ -98,30 +98,42 @@ const SettingsForm = (() => {
                 }
             }
 
-            await fetch("/service/restart");
-            showNotification("Settings saved – Billy restarted", "success");
-            
-            // Clear localStorage since server values are now saved
-            const dropdowns = [
-                'OPENAI_MODEL', 'VOICE', 'RUN_MODE', 'TURN_EAGERNESS', 
-                'BILLY_MODEL', 'BILLY_PINS_SELECT', 'HA_LANG'
-            ];
-            dropdowns.forEach(id => {
-                localStorage.removeItem(`dropdown_${id}`);
-            });
-            
-            // Simulate "Restart UI" button behavior for software settings
+            // Auto-refresh configuration instead of restarting services
             try {
-                const res = await fetch('/restart', {method: 'POST'});
-                const data = await res.json();
-                if (data.status === "ok") {
-                    showNotification("Restarting UI to apply settings changes…", "success");
-                    setTimeout(() => location.reload(), 3000);
+                const refreshResponse = await fetch("/config/auto-refresh", {method: "POST"});
+                const refreshData = await refreshResponse.json();
+                
+                if (refreshData.status === "ok") {
+                    showNotification("Settings saved and applied", "success");
+                    
+                    // Update UI with new configuration
+                    if (refreshData.config) {
+                        // Update dropdowns with new values
+                        const dropdowns = [
+                            'OPENAI_MODEL', 'VOICE', 'RUN_MODE', 'TURN_EAGERNESS', 
+                            'BILLY_MODEL', 'BILLY_PINS_SELECT', 'HA_LANG'
+                        ];
+                        dropdowns.forEach(id => {
+                            const element = document.getElementById(id);
+                            if (element && refreshData.config[id]) {
+                                element.value = refreshData.config[id];
+                                localStorage.setItem(`dropdown_${id}`, refreshData.config[id]);
+                            }
+                        });
+                        
+                        // Refresh user profile panel if it exists
+                        if (window.UserProfilePanel && window.UserProfilePanel.refreshUserProfile) {
+                            window.UserProfilePanel.refreshUserProfile();
+                        }
+                    }
                 } else {
-                    showNotification(data.error || "Restart failed", "error");
+                    throw new Error(refreshData.error || "Auto-refresh failed");
                 }
-            } catch (err) {
-                showNotification(err.message, "error");
+            } catch (error) {
+                console.error("Auto-refresh failed, falling back to restart:", error);
+                // Fallback to restart if auto-refresh fails
+                await fetch("/restart", {method: "POST"});
+                showNotification("Settings saved – Billy restarted", "success");
             }
 
             if (portChanged || hostnameChanged) {
@@ -194,7 +206,25 @@ const SettingsForm = (() => {
         updateUI(Number(input.value));
     }
 
-    return {handleSettingsSave, populateDropdowns, saveDropdownSelections, initMouthArticulationSlider};
+    const refreshFromConfig = (config) => {
+        // Update dropdowns with new configuration values
+        const dropdowns = [
+            'OPENAI_MODEL', 'VOICE', 'RUN_MODE', 'TURN_EAGERNESS', 
+            'BILLY_MODEL', 'BILLY_PINS_SELECT', 'HA_LANG'
+        ];
+        dropdowns.forEach(id => {
+            const element = document.getElementById(id);
+            if (element && config[id]) {
+                element.value = config[id];
+                localStorage.setItem(`dropdown_${id}`, config[id]);
+            }
+        });
+    };
+
+    return {handleSettingsSave, populateDropdowns, saveDropdownSelections, initMouthArticulationSlider, refreshFromConfig};
 })();
+
+// Make SettingsForm globally available
+window.SettingsForm = SettingsForm;
 
 

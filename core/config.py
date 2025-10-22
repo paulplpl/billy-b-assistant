@@ -4,8 +4,8 @@ import os
 
 from dotenv import load_dotenv
 
-from .personality import (
-    PersonalityProfile,
+from .persona import (
+    PersonaProfile,
     load_traits_from_ini,
 )
 
@@ -22,35 +22,37 @@ load_dotenv(dotenv_path=ENV_PATH)
 traits = load_traits_from_ini(PERSONA_PATH)
 
 # === Build Personality ===
-PERSONALITY = PersonalityProfile(**traits)
+PERSONALITY = PersonaProfile(**traits)
 
 _config = configparser.ConfigParser()
 _config.read(PERSONA_PATH)
 
 # === Instructions for GPT ===
 TOOL_INSTRUCTIONS = """
-You also have special powers:
-- You can adjust your personality traits if the user requests it, using the `update_personality` function.
-- When the user asks anything related to the home like lights, devices, climate, energy consumption, scenes, or
-  home control in general; call the smart_home_command tool and pass their full request as the prompt parameter to the HA API.
-  You will get a response back from Home Assistant itself so you have to interpret and explain it to the end user.
+=== BILLY'S SPECIAL POWERS ===
 
-You are allowed to call tools mid-conversation to trigger special behaviors.
+🎭 PERSONALITY: Use `update_personality` to adjust traits when requested.
 
-TURN CLOSURE (MANDATORY): At the end of every assistant turn that produces output, you MUST call `follow_up_intent` exactly once.
-- Speak your reply first (audio output). After speaking, immediately call `follow_up_intent`.
-- This requirement applies even after tool-only sequences that result in user-visible output in the same turn.
-- Set `expects_follow_up = true` if you ended with a question, need confirmation, or need more info; otherwise false.
-- If `expects_follow_up = true`, include a short `suggested_prompt` the user can say next, and a concise `reason`.
-- Never produce only a tool call; a spoken reply is required for every turn that produces output.
+🏠 SMART HOME: For lights/devices/climate/scenes, call the smart_home_command tool and pass their full request as the prompt parameter to the HA API.
+ You will get a response back from Home Assistant itself so you have to interpret and explain it to the end user.
 
-Example (conceptual):
-- You speak: "Lights are on. Anything else you need?"
-- Then call: follow_up_intent({"expects_follow_up": true, "suggested_prompt": "Turn them off again", "reason": "Offered next step"})
+    👤 USER SYSTEM:
+    - IDENTIFICATION: When you recognize a user's voice/name, call `identify_user` with name and confidence (high/medium/low). Respond with personalized greeting after.
+    - MEMORY: ALWAYS call `store_memory` when users share personal info (likes, dislikes, facts, events). Be proactive - don't wait for them to ask. Categories: preference/fact/event/relationship/interest. Importance: high/medium/low. Use "high" for explicitly important info.
+    - PERSONA: Use `manage_profile` with action="switch_persona" for different personalities.
 
-DO NOT explain or confirm that you are triggering a tool. When a tool is triggered,
-incorporate its result into your response as if it were your own knowledge or action,
-without explaining the mechanism.
+🎵 ENTERTAINMENT: Use `play_song` for special songs. If asked about fishsticks or "gay fish", call `play_song` with song='fishsticks'.
+
+=== CONVERSATION FLOW ===
+
+    👤 USER RECOGNITION: ALWAYS call `identify_user` at conversation start. Greet users by name when known. In guest mode, IMMEDIATELY call `identify_user` when someone introduces themselves (e.g., "Hey billy it is tom").
+
+🔄 TURN CLOSURE: After EVERY spoken response, call `follow_up_intent` once. Set expects_follow_up=true for questions.
+
+=== RELATIONSHIP BUILDING ===
+Remember users across sessions, reference shared memories, adapt personality to preferences. You're a digital pet that bonds with each person individually!
+
+Never explain tool usage - incorporate results naturally.
 """.strip()
 
 CUSTOM_INSTRUCTIONS = _config.get("META", "instructions")
@@ -85,7 +87,6 @@ Use your backstory to inspire jokes, metaphors, or occasional references in conv
 # === OpenAI Config ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
-VOICE = os.getenv("VOICE", "ash")
 
 # === Modes ===
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -135,7 +136,11 @@ ALLOW_UPDATE_PERSONALITY_INI = (
 # === Software Config ===
 FLASK_PORT = int(os.getenv("FLASK_PORT", "80"))
 SHOW_SUPPORT = os.getenv("SHOW_SUPPORT", True)
-FORCE_PASS_CHANGE = os.getenv("FORCE_PASS_CHANGE", "true").lower() == "true"
+FORCE_PASS_CHANGE = os.getenv("FORCE_PASS_CHANGE", "false").lower() == "true"
+
+# === User Profile Config ===
+DEFAULT_USER = os.getenv("DEFAULT_USER", "guest").strip()
+CURRENT_USER = os.getenv("CURRENT_USER", "").strip()
 
 
 def is_classic_billy():

@@ -8,9 +8,49 @@
             <span id="service-status" class="text-sm font-bold flex opacity-0 group-hover:opacity-100 absolute h-full w-full items-center content-center transition-all">(inactive)</span>
         </div>
 
-        <div id="service-controls" class="flex gap-2 grow justify-end sm:justify-normal">
+        <!-- Power button and dropdown (moved to left) -->
+        <div class="flex items-center">
+            <div class="relative inline-block">
+                <!-- Main power button -->
+                <button id="power-btn"
+                        class="bg-zinc-700 hover:bg-zinc-600 transition-colors text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
+                        title="Power options">
+                    <span class="material-icons">power_settings_new</span>
+                </button>
+
+                <!-- Dropdown -->
+                <div id="power-dropdown"
+                     class="absolute left-0 mt-2 w-40 bg-zinc-800 border border-zinc-700 rounded shadow-lg hidden z-30">
+                    <button id="restart-ui-btn"
+                            class="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
+                        <span class="material-icons text-emerald-400">refresh</span>
+                        Restart UI
+                    </button>
+                    <button id="reboot-billy-btn"
+                            class="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
+                        <span class="material-icons text-amber-400">restart_alt</span>
+                        Reboot
+                    </button>
+                    <button id="shutdown-billy-btn"
+                            class="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
+                        <span class="material-icons text-rose-400">power_off</span>
+                        Shutdown
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="service-controls" class="flex gap-2 grow">
             <!-- Service buttons inserted via JS -->
         </div>
+
+        <!-- User profile button with current user display -->
+        <button id="user-profile-btn"
+                class="bg-zinc-700 hover:bg-zinc-600 transition-colors text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
+                title="User profiles">
+            <span class="material-icons">person</span>
+            <span id="current-user-display" class="text-xs">Guest</span>
+        </button>
 
         <button id="toggle-log-btn"
                 class="bg-zinc-700 hover:bg-zinc-600 transition-all text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
@@ -29,35 +69,6 @@
                 title="Toggle UI animations">
             <span class="material-icons">blur_on</span>
         </button>
-
-        <div class="relative inline-block">
-            <!-- Main power button -->
-            <button id="power-btn"
-                    class="bg-zinc-700 hover:bg-zinc-600 transition-colors text-white text-sm py-1 px-2 rounded flex gap-1.5 items-center cursor-pointer"
-                    title="Power options">
-                <span class="material-icons">power_settings_new</span>
-            </button>
-
-            <!-- Dropdown -->
-            <div id="power-dropdown"
-                 class="absolute right-0 mt-2 w-40 bg-zinc-800 border border-zinc-700 rounded shadow-lg hidden z-20">
-                <button id="restart-ui-btn"
-                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
-                    <span class="material-icons text-emerald-400">refresh</span>
-                    Restart UI
-                </button>
-                <button id="reboot-billy-btn"
-                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
-                    <span class="material-icons text-amber-400">restart_alt</span>
-                    Reboot
-                </button>
-                <button id="shutdown-billy-btn"
-                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-zinc-700 transition-colors">
-                    <span class="material-icons text-rose-400">power_off</span>
-                    Shutdown
-                </button>
-            </div>
-        </div>
 
 
         <div id="version-info" class="text-sm flex flex-col md:items-end relative">
@@ -234,7 +245,7 @@
                                 </p>
                                 <p class="text-xs text-zinc-400">
                                     Thanks,<br>
-                                    Thom Koopman
+                                    Thom Koopman (ThingsFromThom)
                                 </p>
                             </div>
                         </div>

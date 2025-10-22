@@ -9,7 +9,7 @@ bp = Blueprint("persona", __name__)
 
 
 @bp.route("/persona", methods=["GET"])
-def get_persona():
+def get_default_persona():
     config = configparser.ConfigParser()
     config.read(PERSONA_PATH)
     return jsonify({
@@ -20,20 +20,128 @@ def get_persona():
     })
 
 
+@bp.route("/persona/<persona_name>")
+def get_persona(persona_name):
+    """Get a specific persona configuration."""
+    try:
+        from core.persona_manager import persona_manager
+
+        # Load the persona data
+        persona_data = persona_manager.load_persona(persona_name)
+        if not persona_data:
+            return jsonify({"error": f"Persona '{persona_name}' not found"}), 404
+
+        # Switch to this persona in the persona manager
+        persona_manager.current_persona = persona_name
+
+        # Format the data for the frontend
+        result = {
+            "PERSONALITY": persona_data.get("personality", {}),
+            "BACKSTORY": persona_data.get("backstory", {}),
+            "META": persona_data.get("meta", {}),
+            "WAKEUP": {},  # Wakeup sounds are handled separately
+        }
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/persona/<persona_name>", methods=["DELETE"])
+def delete_persona(persona_name):
+    """Delete a specific persona."""
+    if persona_name == "default":
+        return jsonify({"error": "Cannot delete the default persona"}), 400
+
+    try:
+        from pathlib import Path
+
+        personas_dir = Path("personas")
+        # Check new folder structure first: personas/persona_name/persona.ini
+        persona_file = personas_dir / persona_name / "persona.ini"
+        if not persona_file.exists():
+            # Fall back to old structure: personas/persona_name.ini
+            persona_file = personas_dir / f"{persona_name}.ini"
+
+        if not persona_file.exists():
+            return jsonify({"error": f"Persona '{persona_name}' not found"}), 404
+
+        # If it's a folder structure, remove the entire folder
+        if (
+            persona_file.parent.name == persona_name
+            and persona_file.name == "persona.ini"
+        ):
+            import shutil
+
+            shutil.rmtree(persona_file.parent)
+        else:
+            # Old structure, just remove the file
+            persona_file.unlink()
+
+        return jsonify({"message": f"Persona '{persona_name}' deleted successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route("/persona", methods=["POST"])
 def save_persona():
     data = request.json
+    persona_name = data.get("persona_name", "default")
+
+    print(
+        f"DEBUG: Saving persona '{persona_name}' with wake-up data: {data.get('WAKEUP', {})}"
+    )
+
+    # Determine the file path based on persona name
+    if persona_name == "default":
+        persona_file = PERSONA_PATH
+    else:
+        from pathlib import Path
+
+        personas_dir = Path("personas")
+        # Use new folder structure: personas/persona_name/persona.ini
+        persona_file = personas_dir / persona_name / "persona.ini"
+
+    print(f"DEBUG: Saving to file: {persona_file}")
+
     config = configparser.ConfigParser()
     config["PERSONALITY"] = {k: str(v) for k, v in data.get("PERSONALITY", {}).items()}
     config["BACKSTORY"] = data.get("BACKSTORY", {})
-    config["META"] = {"instructions": data.get("META", "")}
+
+    # Handle META section - can be string or object
+    meta_data = data.get("META", "")
+    if isinstance(meta_data, dict):
+        # META is an object with name, description, instructions, voice
+        config["META"] = {
+            "name": meta_data.get("name", ""),
+            "description": meta_data.get("description", ""),
+            "instructions": meta_data.get("instructions", ""),
+            "voice": meta_data.get("voice", data.get("VOICE", "ballad")),
+        }
+    else:
+        # META is a string (instructions only)
+        config["META"] = {
+            "instructions": meta_data,
+            "voice": data.get("VOICE", "ballad"),
+        }
     wakeup = data.get("WAKEUP", {})
     config["WAKEUP"] = {
         str(k): v["text"] if isinstance(v, dict) and "text" in v else str(v)
         for k, v in wakeup.items()
     }
-    with open(PERSONA_PATH, "w") as f:
+
+    # Ensure the personas directory exists
+    if persona_name != "default":
+        persona_file.parent.mkdir(exist_ok=True)
+
+    with open(persona_file, "w") as f:
         config.write(f)
+
+    # Clear the persona cache so fresh data is loaded next time
+    from core.persona_manager import persona_manager
+
+    persona_manager.clear_persona_cache(persona_name)
+
     return jsonify({"status": "ok"})
 
 
@@ -44,12 +152,33 @@ def save_single_wakeup_phrase():
     phrase = data.get("phrase", "").strip()
     if not index or not phrase:
         return jsonify({"error": "Missing index or phrase"}), 400
+
+    # Get current persona to determine which file to save to
+    current_persona = "default"
+    try:
+        from core.persona_manager import persona_manager
+
+        current_persona = persona_manager.current_persona
+    except Exception:
+        pass
+
+    # Determine the file path based on current persona
+    if current_persona == "default":
+        persona_file = PERSONA_PATH
+    else:
+        from pathlib import Path
+
+        personas_dir = Path("personas")
+        persona_file = personas_dir / current_persona / "persona.ini"
+        # Ensure the directory exists
+        persona_file.parent.mkdir(exist_ok=True)
+
     config = configparser.ConfigParser()
-    config.read(PERSONA_PATH)
+    config.read(persona_file)
     if "WAKEUP" not in config:
         config["WAKEUP"] = {}
     config["WAKEUP"][index] = phrase
-    with open(PERSONA_PATH, "w") as f:
+    with open(persona_file, "w") as f:
         config.write(f)
     return jsonify({"status": "ok"})
 

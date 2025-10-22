@@ -15,9 +15,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     SettingsForm.populateDropdowns(cfg);
     SettingsForm.initMouthArticulationSlider();
     PersonaForm.handlePersonaSave();
+    PersonaForm.bindPersonaSelector();
+    PersonaForm.populatePersonaSelector();
     window.addBackstoryField = PersonaForm.addBackstoryField;
+    window.savePersonaAs = PersonaForm.savePersonaAs;
+    window.PersonaForm = PersonaForm;
+    
+    // Sync persona with current user after PersonaForm is ready
+    setTimeout(() => {
+        if (window.syncPersonaWithCurrentUser) {
+            window.syncPersonaWithCurrentUser();
+        }
+    }, 100);
     MotorPanel.bindUI();
     PinProfile.bindUI(cfg);
+        if (window.UserProfilePanel && window.UserProfilePanel.bindUI) {
+            window.UserProfilePanel.bindUI();
+        }
     Sections.collapsible();
     ReleaseNotes.init();
 });

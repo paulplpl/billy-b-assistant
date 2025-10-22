@@ -1,9 +1,24 @@
 // ===================== SERVICE STATUS =====================
 const ServiceStatus = (() => {
-    const fetchStatus = async () => {
+    let statusCache = null;
+    let lastFetch = 0;
+    const CACHE_DURATION = 2000; // 2 seconds cache
+
+    const fetchStatus = async (forceRefresh = false) => {
+        const now = Date.now();
+        
+        // Return cached data if still fresh
+        if (!forceRefresh && statusCache && (now - lastFetch) < CACHE_DURATION) {
+            updateServiceStatusUI(statusCache.status);
+            return statusCache;
+        }
+
         const res = await fetch("/service/status");
         const data = await res.json();
+        statusCache = data;
+        lastFetch = now;
         updateServiceStatusUI(data.status);
+        return data;
     };
 
     const updateServiceStatusUI = (status) => {
@@ -85,7 +100,9 @@ const ServiceStatus = (() => {
         LogPanel.fetchLogs();
     };
 
-    return {fetchStatus, updateServiceStatusUI};
+    const getCachedStatus = () => statusCache;
+
+    return {fetchStatus, updateServiceStatusUI, getCachedStatus};
 })();
 
 

@@ -75,10 +75,14 @@ document.getElementById("wakeup-sound-list").addEventListener("click", async (e)
         const clipIndex = e.target.closest("div[data-index]")?.dataset.index;
         if (!clipIndex) return;
         const tryPlay = async () => {
+            // Get current persona from the persona form
+            const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
+            const currentPersona = selectedRow?.getAttribute('data-persona') || 'default';
+            
             const res = await fetch("/wakeup/play", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ index: parseInt(clipIndex) }),
+                body: JSON.stringify({ index: parseInt(clipIndex), persona: currentPersona }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Failed to play audio");
@@ -111,10 +115,14 @@ document.getElementById("wakeup-sound-list").addEventListener("click", async (e)
             return;
         }
         try {
+            // Get current persona from the persona form
+            const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
+            const currentPersona = selectedRow?.getAttribute('data-persona') || 'default';
+            
             const res = await fetch("/wakeup/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text: phrase, index: parseInt(clipIndex) }),
+                body: JSON.stringify({ text: phrase, index: parseInt(clipIndex), persona: currentPersona }),
             });
             if (!res.ok) {
                 const err = await res.json();

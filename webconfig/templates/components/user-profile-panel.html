@@ -1,0 +1,103 @@
+<!-- User Profile Panel -->
+<div id="user-profile-panel" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-white flex items-center">
+                <span class="material-icons mr-2 text-emerald-400">person</span>
+                User Profiles
+            </h3>
+            <button id="close-user-panel" class="text-zinc-400 hover:text-white">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+
+        <!-- Profile Selection Tiles -->
+        <div class="mb-4">
+            <h4 class="text-sm font-medium text-zinc-300 mb-4">Select Profile</h4>
+            <div id="profile-tiles" class="grid grid-cols-2 gap-4">
+                <!-- Guest Profile Tile -->
+                <div class="relative bg-zinc-700 rounded-lg p-4 cursor-pointer transition-all duration-200 hover:bg-zinc-600 border-2 border-transparent min-h-[120px] flex flex-col justify-center group" data-profile="guest" onclick="window.UserProfilePanel.setAsGuest()">
+                    <div class="text-center">
+                        <div class="mb-3 flex justify-center">
+                            <span class="material-icons text-6xl text-zinc-400">person_outline</span>
+                        </div>
+                        <div class="text-white font-medium text-sm mb-1">Guest</div>
+                        <div class="text-zinc-400 text-xs">Anonymous</div>
+                    </div>
+                        <div class="absolute top-2 right-2">
+                            <button class="text-amber-400 hover:text-amber-300 transition-colors" onclick="event.stopPropagation(); window.UserProfilePanel.setAsDefault('guest')" title="Set as default">
+                                <span class="material-icons text-sm">star</span>
+                            </button>
+                        </div>
+                </div>
+                
+                <!-- Dynamic Profile Tiles will be loaded here -->
+            </div>
+        </div>
+
+
+
+        <!-- Profile Settings (Collapsible) -->
+        <div class="mb-4">
+            <div class="bg-zinc-700 rounded-lg border border-zinc-600">
+                <button id="profile-settings-toggle" class="flex items-center justify-between w-full px-4 py-3 text-left text-sm font-medium text-zinc-300 hover:text-white hover:bg-zinc-600 transition-colors rounded-t-lg">
+                    <span class="flex items-center">
+                        <span class="material-icons mr-2 text-emerald-400">settings</span>
+                        Show profile settings
+                    </span>
+                    <span class="material-icons text-zinc-400 transition-transform duration-200" id="profile-settings-chevron">expand_more</span>
+                </button>
+                
+                <div id="profile-settings-content" class="hidden border-t border-zinc-600">
+                    <div class="p-4 space-y-6">
+                        <!-- Memories Section -->
+                        <div>
+                            <h4 class="text-sm font-medium text-zinc-300 mb-3">Recent Memories</h4>
+                            <div id="memories-list" class="space-y-2 max-h-32 overflow-y-auto">
+                                <p class="text-sm text-zinc-400 italic">No memories yet</p>
+                            </div>
+                        </div>
+
+                            <!-- Display Name -->
+                            <div>
+                                <h4 class="text-sm font-medium text-zinc-300 mb-3">Display Name</h4>
+                                <div>
+                                    <input type="text" id="display-name-input" class="w-full bg-zinc-800 text-white rounded px-3 py-2 border border-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500" placeholder="Enter display name">
+                                    <p class="text-xs text-zinc-400 mt-1">Display name shown in the user interface (for display purposes only)</p>
+                                </div>
+                            </div>
+
+                            <!-- Persona Selection -->
+                            <div>
+                                <h4 class="text-sm font-medium text-zinc-300 mb-3">Preferred Persona</h4>
+                                <div>
+                                    <select id="persona-select" class="w-full bg-zinc-800 text-white rounded px-3 py-2 border border-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                                        <!-- Options will be populated dynamically -->
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Profile Actions -->
+                            <div>
+                                <h4 class="text-sm font-medium text-zinc-300 mb-3">Profile Actions</h4>
+                                <div class="flex gap-2">
+                                    <button id="update-persona-btn" class="flex-1 px-3 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-500 disabled:opacity-50 transition-colors flex items-center justify-center gap-2" disabled>
+                                        <span class="material-icons text-sm">save</span>
+                                        Save
+                                    </button>
+                                    <button id="edit-profile-btn" class="flex-1 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded transition-colors flex items-center justify-center gap-2">
+                                        <span class="material-icons text-sm">edit</span>
+                                        Rename
+                                    </button>
+                                    <button id="delete-profile-btn" class="flex-1 px-3 py-2 bg-rose-500 hover:bg-rose-400 text-white rounded transition-colors flex items-center justify-center gap-2">
+                                        <span class="material-icons text-sm">delete</span>
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

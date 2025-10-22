@@ -52,10 +52,55 @@ def restart_billy_services():
 @bp.route("/service/status")
 def service_status():
     try:
+        # Get service status
         output = subprocess.check_output(
             ["systemctl", "is-active", "billy.service"], stderr=subprocess.STDOUT
         )
-        return jsonify({"status": output.decode("utf-8").strip()})
+        service_status = output.decode("utf-8").strip()
+
+        # Get comprehensive status including profiles and configuration
+        try:
+            import time
+
+            from dotenv import load_dotenv
+
+            from core.persona_manager import persona_manager
+            from core.user_profiles import user_manager
+
+            # Get project root and .env path
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            )
+            env_path = os.path.join(project_root, ".env")
+
+            # Reload .env to get latest values
+            load_dotenv(env_path)
+            current_user_name = (
+                os.getenv("CURRENT_USER", "").strip().strip("'\"")
+            )  # Remove quotes and whitespace
+            current_user = user_manager.get_current_user()
+
+            # Get .env file status
+            env_exists = os.path.exists(env_path)
+            env_modified = os.path.getmtime(env_path) if env_exists else 0
+
+            return jsonify({
+                "status": service_status,
+                "current_user": current_user_name,
+                "current_user_loaded": current_user.name if current_user else None,
+                "current_persona": persona_manager.current_persona,
+                "available_profiles": user_manager.list_all_users(),
+                "available_personas": persona_manager.get_available_personas(),
+                "env_file": {"exists": env_exists, "modified": env_modified},
+                "timestamp": time.time(),
+            })
+        except Exception as e:
+            # Fallback to basic service status if profile loading fails
+            return jsonify({
+                "status": service_status,
+                "error": f"Failed to load profile status: {str(e)}",
+            })
+
     except subprocess.CalledProcessError as e:
         return jsonify({"status": e.output.decode("utf-8").strip()})
 

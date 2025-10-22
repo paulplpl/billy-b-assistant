@@ -22,7 +22,6 @@ if not ENV_PATH or not os.path.exists(ENV_PATH):
 CONFIG_KEYS = [
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
-    "VOICE",
     "BILLY_MODEL",
     "BILLY_PINS",
     "MIC_TIMEOUT_SECONDS",
@@ -43,6 +42,8 @@ CONFIG_KEYS = [
     "FORCE_PASS_CHANGE",
     "MOUTH_ARTICULATION",
     "LOG_LEVEL",
+    "DEFAULT_USER",
+    "CURRENT_USER",
 ]
 
 
@@ -59,15 +60,16 @@ def index():
         config={k: str(getattr(core_config, k, "")) for k in CONFIG_KEYS}
         | {
             "VOICE_OPTIONS": [
+                "alloy",
                 "ash",
                 "ballad",
                 "coral",
-                "sage",
-                "verse",
-                "alloy",
                 "echo",
-                "fable",
-                "nova",
+                "sage",
+                "shimmer",
+                "verse",
+                "marin",
+                "cedar",
             ],
         },
     )
@@ -149,7 +151,7 @@ def save():
     changed_port = False
     for key, value in data.items():
         if key in CONFIG_KEYS:
-            set_key(ENV_PATH, key, value)
+            set_key(ENV_PATH, key, value, quote_mode='never')
             if key == "FLASK_PORT" and str(value) != str(old_port):
                 changed_port = True
     response = {"status": "ok"}
@@ -161,28 +163,177 @@ def save():
 
 @bp.route("/config")
 def get_config():
-    return jsonify(
-        {k: str(getattr(core_config, k, "")) for k in CONFIG_KEYS}
-        | {
-            "VOICE_OPTIONS": [
-                "ash",
-                "ballad",
-                "coral",
-                "sage",
-                "verse",
-                "alloy",
-                "echo",
-                "fable",
-                "nova",
-            ],
-        }
-    )
+    # Reload .env file and core config to get latest values
+    from dotenv import load_dotenv
+
+    load_dotenv(ENV_PATH, override=True)
+
+    # Reload core config module to pick up new .env values
+    import importlib
+    import sys
+
+    if 'core.config' in sys.modules:
+        importlib.reload(sys.modules['core.config'])
+
+    # Re-import core_config to get fresh values
+    from ..core_imports import core_config
+
+    # Get basic configuration
+    config_data = {k: str(getattr(core_config, k, "")) for k in CONFIG_KEYS}
+
+    # Add voice options
+    config_data["VOICE_OPTIONS"] = [
+        "alloy",
+        "ash",
+        "ballad",
+        "coral",
+        "echo",
+        "sage",
+        "shimmer",
+        "verse",
+        "marin",
+        "cedar",
+    ]
+
+    # Add user profile information
+    try:
+        from core.config import DEFAULT_USER
+        from core.user_profiles import user_manager
+
+        # Get current user from .env file (already reloaded above)
+        current_user_name = (
+            os.getenv("CURRENT_USER", "").strip().strip("'\"")
+        )  # Remove quotes and whitespace
+        current_user = None
+
+        # Update config_data with fresh CURRENT_USER value
+        config_data["CURRENT_USER"] = current_user_name
+
+        # If we have a current user in .env, try to load it
+        if current_user_name and current_user_name.lower() != "guest":
+            try:
+                current_user = user_manager.identify_user(current_user_name, "high")
+            except Exception as e:
+                print(f"Failed to load current user {current_user_name}: {e}")
+
+        # Only fall back to DEFAULT_USER if CURRENT_USER is completely empty (not set)
+        # If CURRENT_USER is explicitly set to "guest", respect that choice
+        if (
+            not current_user
+            and not current_user_name
+            and DEFAULT_USER
+            and DEFAULT_USER.lower() != "guest"
+        ):
+            try:
+                current_user = user_manager.identify_user(DEFAULT_USER, "high")
+                # Only update CURRENT_USER in .env if it was completely empty
+                config_data["CURRENT_USER"] = DEFAULT_USER
+            except Exception as e:
+                print(f"Failed to load default user {DEFAULT_USER}: {e}")
+
+        # Add user profile data
+        if current_user:
+            config_data["CURRENT_USER"] = {
+                "name": current_user.name,
+                "data": current_user.data,
+                "memories": current_user.get_memories(10),
+                "context": current_user.get_context_string(),
+            }
+        else:
+            # If no user is loaded, preserve the CURRENT_USER value from .env
+            # This could be "guest" or a user name that couldn't be loaded
+            config_data["CURRENT_USER"] = (
+                current_user_name if current_user_name else None
+            )
+
+        # Add available profiles with full data including preferred personas
+        try:
+            from core.user_profiles import UserProfile
+
+            available_profiles = []
+            for user_name in user_manager.list_all_users():
+                try:
+                    profile = UserProfile(user_name)
+                    available_profiles.append({
+                        "name": profile.name,
+                        "data": profile.data,
+                    })
+                except Exception as e:
+                    print(f"Failed to load profile {user_name}: {e}")
+                    # Add basic info even if full profile can't be loaded
+                    available_profiles.append({
+                        "name": user_name,
+                        "data": {"USER_INFO": {"preferred_persona": "default"}},
+                    })
+            config_data["AVAILABLE_PROFILES"] = available_profiles
+        except Exception as e:
+            print(f"Failed to load profile data: {e}")
+            config_data["AVAILABLE_PROFILES"] = []
+
+        # Add available personas
+        try:
+            from core.persona_manager import persona_manager
+
+            config_data["AVAILABLE_PERSONAS"] = persona_manager.get_available_personas()
+        except Exception as e:
+            print(f"Failed to load personas: {e}")
+            config_data["AVAILABLE_PERSONAS"] = []
+
+    except Exception as e:
+        print(f"Failed to load user profile data: {e}")
+        config_data["CURRENT_USER"] = None
+        config_data["AVAILABLE_PROFILES"] = []
+        config_data["AVAILABLE_PERSONAS"] = []
+
+    return jsonify(config_data)
+
+
+@bp.route("/profiles/current-user", methods=["PATCH"])
+def update_current_user_profile():
+    """Update the current user's profile settings."""
+    try:
+        from core.persona_manager import persona_manager
+        from core.user_profiles import user_manager
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        current_user = user_manager.get_current_user()
+        if not current_user:
+            return jsonify({"error": "No current user"}), 400
+
+        # Handle persona switching
+        if data.get("action") == "switch_persona":
+            new_persona = data.get("preferred_persona")
+            if new_persona:
+                # Update user's preferred persona
+                current_user.data['USER_INFO']['preferred_persona'] = new_persona
+                current_user._save_profile()
+
+                # Switch persona manager to new persona
+                persona_manager.switch_persona(new_persona)
+
+                return jsonify({
+                    "success": True,
+                    "message": f"Switched to {new_persona} persona",
+                })
+
+        return jsonify({"error": "Invalid action"}), 400
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @bp.route("/config/refresh", methods=["POST"])
 def refresh_config():
     """Refresh core configuration modules to pick up new settings."""
     try:
+        # Reload .env file first
+        from dotenv import load_dotenv
+
+        load_dotenv(ENV_PATH, override=True)
+
         # Import and reload core modules that might have cached configuration
         import importlib
         import sys
@@ -207,6 +358,123 @@ def refresh_config():
         return jsonify({"status": "ok", "message": "Configuration refreshed"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/config/auto-refresh", methods=["POST"])
+def auto_refresh_config():
+    """Automatically refresh configuration when .env changes are detected."""
+    try:
+        # Reload .env file
+        from dotenv import load_dotenv
+
+        load_dotenv(ENV_PATH, override=True)
+
+        # Reload core config module
+        import importlib
+        import sys
+
+        if 'core.config' in sys.modules:
+            importlib.reload(sys.modules['core.config'])
+
+        # Get updated configuration
+        from ..core_imports import core_config
+
+        # Return updated config data
+        config_data = {k: str(getattr(core_config, k, "")) for k in CONFIG_KEYS}
+
+        # Add user profile information
+        try:
+            from core.config import DEFAULT_USER
+            from core.user_profiles import user_manager
+
+            # Get current user from .env file (fresh read)
+            current_user_name = os.getenv("CURRENT_USER", "").strip().strip("'\"")
+            current_user = None
+
+            # Update config_data with fresh CURRENT_USER value
+            config_data["CURRENT_USER"] = current_user_name
+
+            # If we have a current user in .env, try to load it
+            if current_user_name and current_user_name.lower() != "guest":
+                try:
+                    current_user = user_manager.identify_user(current_user_name, "high")
+                except Exception as e:
+                    print(f"Failed to load current user {current_user_name}: {e}")
+
+            # Only fall back to DEFAULT_USER if CURRENT_USER is completely empty
+            if (
+                not current_user
+                and not current_user_name
+                and DEFAULT_USER
+                and DEFAULT_USER.lower() != "guest"
+            ):
+                try:
+                    current_user = user_manager.identify_user(DEFAULT_USER, "high")
+                    config_data["CURRENT_USER"] = DEFAULT_USER
+                except Exception as e:
+                    print(f"Failed to load default user {DEFAULT_USER}: {e}")
+
+            # Add user profile data
+            if current_user:
+                config_data["CURRENT_USER"] = {
+                    "name": current_user.name,
+                    "data": current_user.data,
+                    "memories": current_user.get_memories(10),
+                    "context": current_user.get_context_string(),
+                }
+            else:
+                config_data["CURRENT_USER"] = (
+                    current_user_name if current_user_name else None
+                )
+
+            # Add available profiles with full data including preferred personas
+            try:
+                from core.user_profiles import UserProfile
+
+                available_profiles = []
+                for user_name in user_manager.list_all_users():
+                    try:
+                        profile = UserProfile(user_name)
+                        available_profiles.append({
+                            "name": profile.name,
+                            "data": profile.data,
+                        })
+                    except Exception as e:
+                        print(f"Failed to load profile {user_name}: {e}")
+                        # Add basic info even if full profile can't be loaded
+                        available_profiles.append({
+                            "name": user_name,
+                            "data": {"USER_INFO": {"preferred_persona": "default"}},
+                        })
+                config_data["AVAILABLE_PROFILES"] = available_profiles
+            except Exception as e:
+                print(f"Failed to load profile data: {e}")
+                config_data["AVAILABLE_PROFILES"] = []
+
+            # Add available personas
+            try:
+                from core.persona_manager import persona_manager
+
+                config_data["AVAILABLE_PERSONAS"] = (
+                    persona_manager.get_available_personas()
+                )
+            except Exception as e:
+                print(f"Failed to load personas: {e}")
+                config_data["AVAILABLE_PERSONAS"] = []
+
+        except Exception as e:
+            print(f"Failed to load user profile data: {e}")
+            config_data["CURRENT_USER"] = None
+            config_data["AVAILABLE_PROFILES"] = []
+            config_data["AVAILABLE_PERSONAS"] = []
+
+        return jsonify({
+            "status": "ok",
+            "message": "Configuration auto-refreshed",
+            "config": config_data,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 
 @bp.route('/get-env')

@@ -7,9 +7,8 @@ const AudioPanel = (() => {
 
     document.getElementById("speaker-check-btn").addEventListener("click", async () => {
         try {
-            const res = await fetch("/service/status");
-            const {status} = await res.json();
-            if (status === "active") {
+            const data = await ServiceStatus.fetchStatus();
+            if (data.status === "active") {
                 showNotification("⚠️ Please stop the Billy service before running speaker test.", "warning");
                 return;
             }
@@ -31,9 +30,8 @@ const AudioPanel = (() => {
             showNotification("Mic check stopped");
         } else {
             try {
-                const res = await fetch("/service/status");
-                const {status} = await res.json();
-                if (status === "active") {
+                const data = await ServiceStatus.fetchStatus();
+                if (data.status === "active") {
                     await fetch("/service/stop");
                     showNotification("Billy was stopped for mic check. You’ll need to start it again afterwards.", "warning");
                 }

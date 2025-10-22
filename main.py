@@ -35,6 +35,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Imports that might use environment variables ---
+from pathlib import Path
+
 import core.button
 from core.audio import playback_queue
 
@@ -66,6 +68,11 @@ def main():
     threading.Thread(target=start_mqtt, daemon=True).start()
     start_motor_watchdog()
     core.button.start_loop()
+
+    # Load default user profile
+    from core.user_profiles import user_manager
+
+    user_manager.load_default_user()
 
 
 if __name__ == "__main__":

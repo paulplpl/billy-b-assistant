@@ -1,25 +1,17 @@
-// ===================== APP CONFIG (single fetch) =====================
+// ===================== APP CONFIG (uses centralized ConfigService) =====================
 const AppConfig = (() => {
     let cfg = null;
-    let promise = null;
 
-    const load = () => {
-        if (promise) return promise;
-        promise = fetch("/config")
-            .then(r => r.json())
-            .then(j => (cfg = j))
-            .catch(e => {
-                console.warn("Failed to load /config:", e);
-                cfg = {};
-                return cfg;
-            });
-        return promise;
+    const load = async () => {
+        cfg = await ConfigService.fetchConfig();
+        return cfg || {};
     };
 
-    const refresh = () => {
+    const refresh = async () => {
         // Force reload configuration from server
-        promise = null;
-        return load();
+        ConfigService.clearCache();
+        cfg = await ConfigService.fetchConfig();
+        return cfg || {};
     };
 
     const get = () => cfg || {};

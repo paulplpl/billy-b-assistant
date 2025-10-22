@@ -7,9 +7,12 @@
 {% block main_content %}
 <!-- Section 2–4 in responsive grid layout -->
 <main id="main-content" class="max-w-6xl mx-auto">
-    <div class="grid grid-cols-1 md:grid-cols-2 ">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         {% include "components/settings-form.html" %}
         {% include "components/persona-form.html" %}
     </div>
 </main>
+
+<!-- User Profile Panel -->
+{% include "components/user-profile-panel.html" %}
 {% endblock %}

@@ -91,7 +91,7 @@ def mqtt_send_discovery():
         "identifiers": ["billy_bass"],
         "name": "Big Mouth Billy Bass",
         "model": "Billy Bassistant",
-        "manufacturer": "Thom Koopman",
+        "manufacturer": "ThingsFromThom",
     }
 
     # Sensor for Billy's state

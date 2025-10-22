@@ -24,69 +24,293 @@ from .config import (
     SILENCE_THRESHOLD,
     TEXT_ONLY_MODE,
     TURN_EAGERNESS,
-    VOICE,
 )
 from .ha import send_conversation_prompt
 from .logger import logger
 from .mic import MicManager
 from .movements import move_tail_async, stop_all_motors
 from .mqtt import mqtt_publish
-from .personality import update_persona_ini
+from .persona import update_persona_ini
+from .persona_manager import persona_manager
+from .user_profiles import user_manager
 
 
-TOOLS = [
-    {
-        "name": "update_personality",
-        "type": "function",
-        "description": "Adjusts Billy's personality traits",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                trait: {"type": "integer", "minimum": 0, "maximum": 100}
-                for trait in vars(PERSONALITY)
+def get_instructions_with_user_context():
+    """Generate instructions with current user context and persona if available."""
+    # Check if we're in guest mode
+    from dotenv import load_dotenv
+
+    from .config import ENV_PATH
+
+    load_dotenv(ENV_PATH, override=True)
+    current_user_env = os.getenv("CURRENT_USER", "").strip().strip("'\"")
+
+    # Get current user context
+    current_user = user_manager.get_current_user()
+    user_section = ""
+    persona_section = ""
+
+    # Modify instructions based on guest mode
+    if current_user_env and current_user_env.lower() == "guest":
+        # Guest mode - modify instructions to not try to identify users
+        logger.info(
+            "🔧 get_instructions_with_user_context: Using guest mode instructions", "🔧"
+        )
+        # In guest mode, use default persona traits (no need to modify personality section)
+        return INSTRUCTIONS.replace(
+            "👤 USER RECOGNITION: ALWAYS call `identify_user` at conversation start. Greet users by name when known.",
+            "👤 GUEST MODE: You are in guest mode. If someone introduces themselves (e.g., 'Hey billy it is tom', 'I am Tom', 'My name is Sarah'), you MUST IMMEDIATELY call `identify_user` tool BEFORE responding. This switches you to user mode. Otherwise treat everyone as a guest visitor.",
+        ).replace(
+            "👤 USER SYSTEM:\n- IDENTIFICATION: When you recognize a user's voice/name, call `identify_user` with name and confidence (high/medium/low). Respond with personalized greeting after.\n- MEMORY: Call `store_memory` when users share personal info. Categories: preference/fact/event/relationship/interest. Importance: high/medium/low.\n- PERSONA: Use `manage_profile` with action=\"switch_persona\" for different personalities.",
+            "👤 USER SYSTEM: Limited in guest mode - only `identify_user` available. After identification, ALWAYS call `store_memory` when users share personal info (likes, dislikes, facts, events). Be proactive - don't wait for them to ask.",
+        )
+    if current_user:
+        # User mode - add user context
+        user_context = current_user.get_context_string()
+        if user_context:
+            user_section = f"""
+---
+# Current User Context
+{user_context}"""
+
+        # Get user's preferred persona
+        preferred_persona = current_user.data['USER_INFO'].get(
+            'preferred_persona', 'default'
+        )
+        persona_instructions = persona_manager.get_persona_instructions(
+            preferred_persona
+        )
+
+        # Get current persona's personality traits and backstory
+        current_persona_data = persona_manager.load_persona(preferred_persona)
+        if current_persona_data:
+            current_instructions = INSTRUCTIONS
+
+            # Replace personality traits if available
+            if current_persona_data.get('personality'):
+                # Create a temporary personality object with current persona's traits
+                from .persona import PersonaProfile
+
+                temp_personality = PersonaProfile()
+                for trait, value in current_persona_data['personality'].items():
+                    if hasattr(temp_personality, trait):
+                        setattr(temp_personality, trait, int(value))
+
+                # Replace the personality section in instructions with current persona's traits
+                current_instructions = current_instructions.replace(
+                    PERSONALITY.generate_prompt(), temp_personality.generate_prompt()
+                )
+
+            # Replace backstory if available
+            if current_persona_data.get('backstory'):
+                # Format current persona's backstory
+                backstory_parts = []
+                for key, value in current_persona_data['backstory'].items():
+                    backstory_parts.append(f"- {key}: {value}")
+                current_persona_backstory = "\n".join(backstory_parts)
+
+                # Replace the backstory section in instructions with current persona's backstory
+                from .config import BACKSTORY_FACTS
+
+                current_instructions = current_instructions.replace(
+                    BACKSTORY_FACTS, current_persona_backstory
+                )
+        else:
+            current_instructions = INSTRUCTIONS
+
+        if persona_instructions:
+            persona_section = f"""
+---
+# Active Persona
+{persona_instructions}"""
+        else:
+            persona_section = ""
+
+        return current_instructions + user_section + persona_section
+    # No user loaded - use default instructions
+    return INSTRUCTIONS
+
+
+def get_tools_for_current_mode():
+    """Get tools list based on current mode (guest vs user mode)."""
+    # Check if we're in guest mode
+    from dotenv import load_dotenv
+
+    from .config import ENV_PATH
+
+    load_dotenv(ENV_PATH, override=True)
+    current_user_env = os.getenv("CURRENT_USER", "").strip().strip("'\"")
+
+    logger.info(
+        f"🔧 get_tools_for_current_mode: CURRENT_USER='{current_user_env}'", "🔧"
+    )
+
+    base_tools = [
+        {
+            "name": "update_personality",
+            "type": "function",
+            "description": "Adjusts Billy's personality traits",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    trait: {"type": "integer", "minimum": 0, "maximum": 100}
+                    for trait in vars(PERSONALITY)
+                },
             },
         },
-    },
-    {
-        "name": "play_song",
-        "type": "function",
-        "description": "Plays a special Billy song based on a given name.",
-        "parameters": {
-            "type": "object",
-            "properties": {"song": {"type": "string"}},
-            "required": ["song"],
-        },
-    },
-    {
-        "name": "smart_home_command",
-        "type": "function",
-        "description": "Send a natural language prompt to the Home Assistant conversation API and read back the response.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "prompt": {
-                    "type": "string",
-                    "description": "The command to send to Home Assistant",
-                }
+        {
+            "name": "play_song",
+            "type": "function",
+            "description": "Plays a special Billy song based on a given name.",
+            "parameters": {
+                "type": "object",
+                "properties": {"song": {"type": "string"}},
+                "required": ["song"],
             },
-            "required": ["prompt"],
         },
-    },
-    {
-        "name": "follow_up_intent",
-        "type": "function",
-        "description": "Call at the end of your turn to indicate if you expect a user reply now.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "expects_follow_up": {"type": "boolean"},
-                "suggested_prompt": {"type": "string"},
-                "reason": {"type": "string"},
+        {
+            "name": "smart_home_command",
+            "type": "function",
+            "description": "Send a natural language prompt to the Home Assistant conversation API and read back the response.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The command to send to Home Assistant",
+                    }
+                },
+                "required": ["prompt"],
             },
-            "required": ["expects_follow_up"],
         },
-    },
-]
+        {
+            "name": "follow_up_intent",
+            "type": "function",
+            "description": "Call at the end of your turn to indicate if you expect a user reply now.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expects_follow_up": {"type": "boolean"},
+                    "suggested_prompt": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["expects_follow_up"],
+            },
+        },
+        {
+            "name": "identify_user",
+            "type": "function",
+            "description": "Call this ONLY when someone explicitly introduces themselves by stating their own name (e.g., 'I am Tom', 'My name is Sarah', 'Hey billy it is tom'). Do NOT call this when someone greets you by name (like 'Hello Billy' or 'Hey Billy'). Only call when they are telling you their own name to switch from guest mode to user mode.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name the user provided",
+                    },
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"],
+                        "description": "How confident you are about the name spelling",
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Any additional context about how they introduced themselves",
+                    },
+                },
+                "required": ["name", "confidence"],
+            },
+        },
+    ]
+
+    # Add user-specific tools only if not in guest mode
+    # BUT always include identify_user so Billy can switch from guest to user mode
+    if not (current_user_env and current_user_env.lower() == "guest"):
+        logger.info("🔧 get_tools_for_current_mode: Adding user-specific tools", "🔧")
+        user_tools = [
+            {
+                "name": "store_memory",
+                "type": "function",
+                "description": "ALWAYS call this when users share personal information (likes, dislikes, facts, events, preferences). Be proactive - don't wait for them to ask you to remember. Use 'high' importance for explicitly important info.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "memory": {
+                            "type": "string",
+                            "description": "The memory or fact to store about the user",
+                        },
+                        "importance": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low"],
+                            "description": "How important this memory is",
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": [
+                                "preference",
+                                "fact",
+                                "event",
+                                "relationship",
+                                "interest",
+                            ],
+                            "description": "Category of the memory",
+                        },
+                    },
+                    "required": ["memory", "importance", "category"],
+                },
+            },
+            {
+                "name": "manage_profile",
+                "type": "function",
+                "description": "Manage user profile settings and preferences",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["create", "update", "switch_persona", "get_info"],
+                            "description": "Action to perform on the profile",
+                        },
+                        "preferred_persona": {
+                            "type": "string",
+                            "description": "User's preferred Billy personality",
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Additional notes about the user",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+            {
+                "name": "switch_persona",
+                "type": "function",
+                "description": "Switch Billy's persona mid-session and acknowledge the change",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "persona": {
+                            "type": "string",
+                            "description": "The persona to switch to",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Optional reason for the persona switch",
+                        },
+                    },
+                    "required": ["persona"],
+                },
+            },
+        ]
+        base_tools.extend(user_tools)
+    else:
+        logger.info(
+            "🔧 get_tools_for_current_mode: Guest mode - not adding user-specific tools",
+            "🔧",
+        )
+
+    return base_tools
 
 
 class BillySession:
@@ -138,6 +362,9 @@ class BillySession:
         self._saw_transcript_delta = False
         self._turn_had_speech = False
         self._active_transcript_stream: str | None = None  # "audio" | "text"
+
+        # Flag for handling "I am not X" scenarios
+        self._waiting_for_name_after_denial = False
         self._added_done_text = False
 
     # ---- Websocket helpers ---------------------------------------------
@@ -367,6 +594,18 @@ class BillySession:
         if name == "smart_home_command":
             await self._handle_smart_home_command(raw_args)
             return
+        if name == "identify_user":
+            await self._handle_identify_user(raw_args)
+            return
+        if name == "store_memory":
+            await self._handle_store_memory(raw_args)
+            return
+        if name == "manage_profile":
+            await self._handle_manage_profile(raw_args)
+            return
+        if name == "switch_persona":
+            await self._handle_switch_persona(raw_args)
+            return
 
     async def _on_response_done(self, data: dict[str, Any]):
         error = data.get("status_details", {}).get("error")
@@ -476,14 +715,12 @@ class BillySession:
             try:
                 self.mic = MicManager()
             except Exception as e:
-                if DEBUG_MODE:
-                    logger.warning(f"MicManager recreate failed: {e}")
+                logger.warning(f"MicManager recreate failed: {e}")
 
             try:
                 self.mic.start(self.mic_callback)
                 self.mic_running = True
-                if DEBUG_MODE:
-                    logger.success("Mic started after retry")
+                logger.info("Mic started after retry", "✅")
                 if not self.mic_timeout_task or self.mic_timeout_task.done():
                     self.mic_timeout_task = asyncio.create_task(
                         self.mic_timeout_checker()
@@ -492,7 +729,41 @@ class BillySession:
                 return
             except Exception as e:
                 self.mic_running = False
-                print(f"❌ Mic retry failed: {e}")
+                logger.warning(f"Mic retry failed: {e}")
+
+                # Try audio system reset for device unavailable errors
+                if "Device unavailable" in str(e):
+                    logger.info("Attempting audio system reset in retry loop...", "🔄")
+                    try:
+                        import subprocess
+
+                        import sounddevice as sd
+
+                        # Reset PortAudio system
+                        sd._terminate()
+                        await asyncio.sleep(0.5)
+                        sd._initialize()
+
+                        # Reset ALSA mixer
+                        subprocess.run(
+                            ["sudo", "alsactl", "restore"],
+                            capture_output=True,
+                            timeout=5,
+                        )
+
+                        # Kill any processes that might be using the audio device
+                        subprocess.run(
+                            ["sudo", "fuser", "-k", "/dev/snd/*"],
+                            capture_output=True,
+                            timeout=3,
+                        )
+
+                        await asyncio.sleep(2.0)
+                        logger.info("Audio system reset completed in retry loop", "✅")
+                    except Exception as reset_error:
+                        logger.warning(
+                            f"Audio reset failed in retry loop: {reset_error}"
+                        )
 
         # All retries exhausted
         logger.error(
@@ -545,16 +816,33 @@ class BillySession:
                 logger.warning(f"Mic open failed (attempt {attempt}/{retries}): {e}")
                 # For ALSA device unavailable errors, try to reset audio system
                 if "Device unavailable" in str(e) and attempt < retries:
-                    print("🔄 Attempting audio system reset...")
+                    logger.info("Attempting audio system reset...", "🔄")
                     try:
                         import subprocess
 
+                        import sounddevice as sd
+
+                        # Reset PortAudio system
+                        sd._terminate()
+                        await asyncio.sleep(0.5)
+                        sd._initialize()
+
+                        # Reset ALSA mixer
                         subprocess.run(
                             ["sudo", "alsactl", "restore"],
                             capture_output=True,
                             timeout=5,
                         )
-                        await asyncio.sleep(1.0)
+
+                        # Kill any processes that might be using the audio device
+                        subprocess.run(
+                            ["sudo", "fuser", "-k", "/dev/snd/*"],
+                            capture_output=True,
+                            timeout=3,
+                        )
+
+                        await asyncio.sleep(2.0)
+                        logger.info("Audio system reset completed", "✅")
                     except Exception as reset_error:
                         logger.warning(f"Audio reset failed: {reset_error}")
 
@@ -590,11 +878,13 @@ class BillySession:
                             "type": "session.update",
                             "session": {
                                 "type": "realtime",
-                                "instructions": INSTRUCTIONS,
-                                "tools": TOOLS,
+                                "instructions": get_instructions_with_user_context(),
+                                "tools": get_tools_for_current_mode(),
                                 "audio": {
                                     "input": {
                                         "format": {"type": "audio/pcm", "rate": 24000},
+                                        "transcription": {"model": "whisper-1"},
+                                        "noise_reduction": {"type": "near_field"},
                                         "turn_detection": {
                                             "type": "semantic_vad",
                                             "eagerness": TURN_EAGERNESS,
@@ -609,7 +899,8 @@ class BillySession:
                                                     "type": "audio/pcm",
                                                     "rate": 24000,
                                                 },
-                                                "voice": VOICE,
+                                                "voice": persona_manager.get_current_persona_voice(),
+                                                "speed": 1.0,
                                             }
                                         }
                                         if not TEXT_ONLY_MODE
@@ -692,7 +983,7 @@ class BillySession:
         self.last_rms = rms
 
         if DEBUG_MODE:
-            logger.verbose(f"Mic Volume: {rms:.1f}", "🎙")
+            print(f"\r🎙️ Mic Volume: {rms:.1f}", end="", flush=True)
 
         if rms > SILENCE_THRESHOLD:
             self.last_activity[0] = time.time()
@@ -715,6 +1006,9 @@ class BillySession:
         )
 
         try:
+            # Auto-identify default user before starting mic
+            await self._auto_identify_default_user()
+
             # Start mic immediately only for non-kickoff sessions
             if not self.kickoff_text:
                 self._start_mic()
@@ -722,6 +1016,7 @@ class BillySession:
             async for message in self.ws:
                 if not self.session_active.is_set():
                     print("🚪 Session marked as inactive, stopping stream loop.")
+                    print()  # Add newline to end the mic volume display line
                     break
                 data = json.loads(message)
                 if DEBUG_MODE and (
@@ -837,6 +1132,7 @@ class BillySession:
         logger.verbose(f"Full response: {self.full_response_text.strip()}", "🧠")
 
         if not self.session_active.is_set():
+            print()  # Add newline to end the mic volume display line
             logger.info(
                 "Session inactive after timeout or interruption. Not restarting.", "🚪"
             )
@@ -892,6 +1188,10 @@ class BillySession:
 
     async def stop_session(self):
         logger.info("Stopping session...", "🛑")
+
+        # Increment interaction count for current user at end of session
+        user_manager.increment_current_user_interaction_count()
+
         self.session_active.clear()
         self._stop_mic()
 
@@ -936,3 +1236,541 @@ class BillySession:
             logger.warning(f"{sound_path} not found, skipping audio playback.")
 
         await self.stop_session()
+
+    async def _auto_identify_default_user(self):
+        """Automatically identify the current user if set and trigger a greeting."""
+        try:
+            # Reload environment variables to get latest values
+            from dotenv import load_dotenv
+
+            from .config import ENV_PATH
+
+            load_dotenv(ENV_PATH, override=True)
+
+            # Get fresh values from environment
+            current_user_env = (
+                os.getenv("CURRENT_USER", "").strip().strip("'\"")
+            )  # Remove quotes and whitespace
+            default_user_env = os.getenv("DEFAULT_USER", "guest").strip().strip("'\"")
+
+            current_user = user_manager.get_current_user()
+
+            # Use CURRENT_USER from .env if available, otherwise fall back to DEFAULT_USER
+            user_to_identify = (
+                current_user_env
+                if current_user_env and current_user_env.lower() != "guest"
+                else default_user_env
+            )
+
+            logger.info(
+                f"Auto-identify check: CURRENT_USER='{current_user_env}', DEFAULT_USER='{default_user_env}', current_user={current_user.name if current_user else None}",
+                "👤",
+            )
+
+            # Handle guest mode explicitly
+            if current_user_env and current_user_env.lower() == "guest":
+                if current_user:
+                    # Clear current user for guest mode
+                    logger.info("Switching to guest mode - clearing current user", "👤")
+                    user_manager.clear_current_user()
+                return  # Don't identify or greet anyone in guest mode
+
+            # If we have a user to identify, ensure they're loaded (but don't greet yet)
+            if user_to_identify and user_to_identify.lower() != "guest":
+                if (
+                    not current_user
+                    or current_user.name.lower() != user_to_identify.lower()
+                ):
+                    # Load the user profile silently (no greeting)
+                    logger.info(f"Auto-loading user profile: {user_to_identify}", "👤")
+                    await self._load_user_profile_silently(user_to_identify)
+                else:
+                    # User is already loaded, no greeting needed
+                    logger.info(f"User already loaded: {current_user.name}", "👤")
+            else:
+                logger.info(
+                    f"No default user set or guest mode: DEFAULT_USER='{default_user_env}'",
+                    "👤",
+                )
+        except Exception as e:
+            logger.warning(f"Failed to auto-identify default user: {e}", "⚠️")
+
+    async def _load_user_profile_silently(self, user_name):
+        """Load a user profile without sending a greeting."""
+        try:
+            # Load or create profile
+            profile = user_manager.identify_user(user_name, "high")
+            if profile:
+                # Save current user to .env file
+                await self._save_current_user_to_env(profile.name)
+
+                # Switch to user's preferred persona
+                await self._switch_to_user_persona(profile)
+
+                # Update session with user context (but no greeting)
+                await self._update_session_with_user_context()
+
+                logger.info(f"Silently loaded profile for {profile.name}", "👤")
+            else:
+                logger.warning(f"Failed to load profile for {user_name}", "⚠️")
+        except Exception as e:
+            logger.warning(f"Failed to load user profile silently: {e}", "⚠️")
+
+    async def _send_user_greeting(self, profile):
+        """Send a personalized greeting to the current user."""
+        try:
+            # Generate greeting context for Billy's personality to use
+            greeting_context = self._generate_dynamic_greeting(profile)
+
+            logger.info(
+                f"Sending greeting context to {profile.name}: {greeting_context}", "👤"
+            )
+
+            # Create a simple, direct prompt that encourages Billy to speak
+            context_prompt = f"""Generate a spoken greeting for {greeting_context['user_name']}. It's {greeting_context['time_of_day']} and you've talked {greeting_context['interaction_count']} times before. Recency: {greeting_context['recency']}. Speak naturally and be yourself."""
+
+            # Send greeting context as a user message that prompts Billy to generate his own greeting
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": context_prompt}],
+                },
+            })
+
+            # Trigger audio generation
+            await self._ws_send_json({"type": "response.create"})
+
+            logger.info(
+                f"Greeting context sent and audio triggered for {profile.name}", "👤"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send user greeting: {e}", "⚠️")
+
+    def _generate_dynamic_greeting(self, profile):
+        """Generate a dynamic greeting based on user profile and Billy's personality."""
+        from datetime import datetime
+
+        interaction_count = int(profile.data['USER_INFO'].get('interaction_count', '0'))
+        preferred_persona = profile.data['USER_INFO'].get(
+            'preferred_persona', 'default'
+        )
+        last_seen = profile.data['USER_INFO'].get('last_seen', '')
+
+        # Get current time for time-based context
+        current_hour = datetime.now().hour
+        current_time = datetime.now()
+
+        # Determine time of day
+        if 5 <= current_hour < 12:
+            time_period = 'morning'
+        elif 12 <= current_hour < 17:
+            time_period = 'afternoon'
+        elif 17 <= current_hour < 22:
+            time_period = 'evening'
+        else:
+            time_period = 'night'
+
+        # Calculate recency for more natural greetings
+        recency = "recent"
+        if last_seen:
+            try:
+                last_seen_time = datetime.fromisoformat(
+                    last_seen.replace('Z', '+00:00')
+                )
+                time_diff = current_time - last_seen_time
+
+                if time_diff.days > 7:
+                    recency = "long_time"
+                elif time_diff.days > 1:
+                    recency = "few_days"
+                elif time_diff.hours > 12:
+                    recency = "yesterday"
+                elif time_diff.hours > 2:
+                    recency = "earlier"
+                else:
+                    recency = "recent"
+            except Exception:
+                recency = "recent"
+
+        # Let Billy's personality generate the greeting naturally
+        # This will be handled by the AI model with these context variables
+        return {
+            "user_name": profile.name,
+            "is_first_meeting": interaction_count == 0,
+            "time_of_day": time_period,
+            "recency": recency,
+            "interaction_count": interaction_count,
+            "preferred_persona": preferred_persona,
+        }
+
+    async def _handle_identify_user(self, raw_args: str | None):
+        """Handle user identification via tool calling."""
+        args = json.loads(raw_args or "{}")
+        name = args.get("name", "").strip().title()
+        confidence = args.get("confidence", "medium")
+        context = args.get("context", "")
+
+        # Log the function call details in verbose mode
+        logger.verbose(
+            f"🔧 identify_user function called: name='{name}', confidence='{confidence}', context='{context}'",
+            "🔧",
+        )
+
+        if not name:
+            return
+
+        # Check if we're uncertain about spelling
+        if confidence == "low":
+            await self._ask_for_spelling_confirmation(name)
+            return
+
+        # Handle "I am not X" scenarios
+        current_user = user_manager.get_current_user()
+        if (
+            current_user
+            and context
+            and ("not" in context.lower() or "am not" in context.lower())
+        ):
+            # Someone is saying they're not the current user
+            logger.info(
+                f"User says they're not {current_user.name}, asking for their name",
+                "👤",
+            )
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"I understand you're not {current_user.name}. Who are you then? Please tell me your name so I can switch to your profile. If you don't want to say your name, I'll switch to guest mode.",
+                        }
+                    ],
+                },
+            })
+            # Set a flag to track this situation
+            self._waiting_for_name_after_denial = True
+            return
+
+        # Load or create profile
+        profile = user_manager.identify_user(name, confidence)
+        if profile:
+            # Clear the waiting flag since we got a name
+            self._waiting_for_name_after_denial = False
+
+            # Save current user to .env file
+            await self._save_current_user_to_env(profile.name)
+
+            # Switch to user's preferred persona
+            await self._switch_to_user_persona(profile)
+
+            # Profile loaded - trigger a response with user context
+            await self._update_session_with_user_context()
+
+            # Only send greeting if user is actually introducing themselves
+            # Don't greet for auto-loading contexts like "current user" or "default user"
+            if context not in ["current user", "default user"]:
+                await self._send_user_greeting(profile)
+            else:
+                logger.info(
+                    f"Profile loaded for {profile.name} but no greeting sent (auto-load context)",
+                    "👤",
+                )
+        elif self._waiting_for_name_after_denial:
+            # User didn't provide a valid name after saying they're not the current user
+            # Fall back to guest mode
+            logger.info(
+                "User didn't provide a valid name, switching to guest mode", "👤"
+            )
+            user_manager.clear_current_user()
+            await self._save_current_user_to_env("guest")
+            self._waiting_for_name_after_denial = False
+
+            # Send a message acknowledging the switch to guest mode
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "No problem! I've switched to guest mode. You can always tell me your name later if you'd like a personalized experience.",
+                        }
+                    ],
+                },
+            })
+
+    async def _handle_store_memory(self, raw_args: str | None):
+        """Handle memory storage via tool calling."""
+        current_user = user_manager.get_current_user()
+        if not current_user:
+            return
+
+        args = json.loads(raw_args or "{}")
+        memory = args.get("memory", "")
+        importance = args.get("importance", "medium")
+        category = args.get("category", "fact")
+
+        if not memory:
+            return
+
+        # Log the function call details in verbose mode
+        logger.verbose(
+            f"🔧 store_memory function called: memory='{memory}', importance='{importance}', category='{category}'",
+            "🔧",
+        )
+
+        current_user.add_memory(memory, importance, category)
+
+        # Update session with new memory context
+        await self._update_session_with_user_context()
+
+        # Acknowledge memory storage for high importance memories
+        if importance == "high":
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": f"I'll remember that about you, {current_user.name}!",
+                        }
+                    ],
+                },
+            })
+
+    async def _handle_manage_profile(self, raw_args: str | None):
+        """Handle profile management via tool calling."""
+        args = json.loads(raw_args or "{}")
+        action = args.get("action", "")
+
+        if action == "switch_persona":
+            current_user = user_manager.get_current_user()
+            if current_user:
+                new_persona = args.get("preferred_persona", "default")
+
+                # Validate persona exists
+                available_personas = persona_manager.get_available_personas()
+                if new_persona not in available_personas:
+                    await self._ws_send_json({
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": f"Sorry, I don't have a '{new_persona}' persona. Available personas: {', '.join(available_personas)}",
+                                }
+                            ],
+                        },
+                    })
+                    return
+
+                # Set user's preferred persona
+                current_user.set_preferred_persona(new_persona)
+
+                # Switch persona manager to new persona
+                persona_manager.switch_persona(new_persona)
+
+                # Update session with new persona context
+                await self._update_session_with_user_context()
+
+                # Get persona description for response
+                persona_data = persona_manager.get_current_persona_data()
+                persona_desc = (
+                    persona_data.get("meta", {}).get("description", new_persona)
+                    if persona_data
+                    else new_persona
+                )
+
+                await self._ws_send_json({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": f"Switched to {persona_desc} mode for you!",
+                            }
+                        ],
+                    },
+                })
+
+    async def _handle_switch_persona(self, raw_args: str | None):
+        """Handle persona switching mid-session."""
+        args = json.loads(raw_args or "{}")
+        persona_name = args.get("persona", "")
+        reason = args.get("reason", "")
+
+        # Log the function call details in verbose mode
+        logger.verbose(
+            f"🔧 switch_persona function called: persona='{persona_name}', reason='{reason}'",
+            "🔧",
+        )
+
+        if not persona_name:
+            return
+
+        try:
+            # Validate persona exists
+            available_personas = persona_manager.get_available_personas()
+            persona_names = [p["name"] for p in available_personas]
+
+            if persona_name not in persona_names:
+                await self._ws_send_json({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": f"Sorry, I don't have a '{persona_name}' persona. Available personas: {', '.join(persona_names)}",
+                            }
+                        ],
+                    },
+                })
+                return
+
+            # Switch persona
+            persona_manager.switch_persona(persona_name)
+
+            # Update session with new persona context
+            await self._update_session_with_user_context()
+
+            # Get persona description for response
+            persona_data = persona_manager.get_current_persona_data()
+            persona_desc = (
+                persona_data.get("meta", {}).get("description", persona_name)
+                if persona_data
+                else persona_name
+            )
+
+            # Create acknowledgment message
+            if reason:
+                message = f"Right then! Switching to {persona_desc} mode. {reason}"
+            else:
+                message = f"Alright, switching to {persona_desc} mode now!"
+
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": message}],
+                },
+            })
+
+            logger.info(f"Switched to persona: {persona_name}", "🎭")
+
+        except Exception as e:
+            logger.warning(f"Failed to switch persona: {e}")
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "Sorry, couldn't switch personas right now. Something went wrong!",
+                        }
+                    ],
+                },
+            })
+
+    async def _ask_for_spelling_confirmation(self, name: str):
+        """Ask user to confirm name spelling."""
+        response = f"I think I heard '{name}' - is that spelled correctly? Please say 'yes' or spell it out for me."
+        await self._ws_send_json({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": response}],
+            },
+        })
+
+    async def _save_current_user_to_env(self, user_name: str):
+        """Save the current user to the .env file."""
+        try:
+            from dotenv import set_key
+
+            from .config import ENV_PATH
+
+            set_key(ENV_PATH, "CURRENT_USER", user_name, quote_mode='never')
+            logger.info(f"Saved current user to .env: {user_name}", "👤")
+        except Exception as e:
+            logger.warning(f"Failed to save current user to .env: {e}")
+
+    async def _switch_to_user_persona(self, profile):
+        """Switch to the user's preferred persona."""
+        try:
+            preferred_persona = profile.data['USER_INFO'].get(
+                'preferred_persona', 'default'
+            )
+            persona_manager.switch_persona(preferred_persona)
+            logger.info(
+                f"Switched to user's preferred persona: {preferred_persona}", "🎭"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to switch to user persona: {e}")
+
+    async def _update_session_with_user_context(self):
+        """Update the session with current user context."""
+        if not self.ws:
+            return
+
+        try:
+            await self._ws_send_json({
+                "type": "session.update",
+                "session": {
+                    "type": "realtime",
+                    "instructions": get_instructions_with_user_context(),
+                    "audio": {
+                        "output": {
+                            "format": {
+                                "type": "audio/pcm",
+                                "rate": 24000,
+                            },
+                            "voice": persona_manager.get_current_persona_voice(),
+                        }
+                    },
+                },
+            })
+            logger.info("Updated session with user context", "👤")
+        except Exception as e:
+            logger.warning(f"Failed to update session with user context: {e}")
+
+    async def _greet_user(self, profile, context: str = ""):
+        """Greet a user based on their profile."""
+        name = profile.name
+        interaction_count = int(profile.data['USER_INFO'].get('interaction_count', '0'))
+
+        if interaction_count == 0:
+            # New user
+            response = f"Hey {name}! Nice to meet you! I'm Billy, your new AI fish friend. I'll remember you from now on!"
+        else:
+            # Returning user
+            response = f"Hey {name}! Good to see you again! We've talked {interaction_count} times now."
+
+        # Add greeting to conversation and trigger response
+        await self._ws_send_json({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": response}],
+            },
+        })
+
+        # Trigger audio generation for the greeting
+        await self._ws_send_json({"type": "response.create"})

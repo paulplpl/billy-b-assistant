@@ -94,10 +94,46 @@ def audio_callback(indata, frames, time_info, status):
 
 @bp.route("/wakeup", methods=["GET"])
 def list_wakeup_clips():
+    # Get current persona to check for persona-specific clips
+    current_persona = "default"
+    try:
+        from core.persona_manager import persona_manager
+
+        current_persona = persona_manager.current_persona
+    except Exception:
+        pass
+
+    # Load wake-up data from the current persona's configuration
     config = configparser.ConfigParser()
-    config.read(PERSONA_PATH)
+    if current_persona == "default":
+        # For default persona, use the main persona file
+        config.read(PERSONA_PATH)
+    else:
+        # For other personas, use their specific persona file
+        persona_file = os.path.join("personas", current_persona, "persona.ini")
+        if os.path.exists(persona_file):
+            config.read(persona_file)
+        else:
+            # Fallback to main persona file if persona file doesn't exist
+            config.read(PERSONA_PATH)
+
     wakeup_data = dict(config["WAKEUP"]) if "WAKEUP" in config else {}
-    files = glob.glob(str(WAKE_UP_DIR / "*.wav"))
+
+    # Check for appropriate wake-up files based on persona
+    files = []
+    if current_persona and current_persona != "default":
+        # For non-default personas, check persona-specific directory
+        persona_wakeup_dir = os.path.join("personas", current_persona, "wakeup")
+        if os.path.exists(persona_wakeup_dir):
+            files = glob.glob(os.path.join(persona_wakeup_dir, "*.wav"))
+    elif current_persona == "default":
+        # For default persona, use the custom directory
+        files = glob.glob(str(WAKE_UP_DIR / "*.wav"))
+
+    # If no files found yet, check custom directory as fallback
+    if not files:
+        files = glob.glob(str(WAKE_UP_DIR / "*.wav"))
+
     available = {os.path.splitext(os.path.basename(f))[0] for f in files}
     clips = []
     for k in sorted(wakeup_data.keys(), key=lambda x: int(x)):
@@ -112,11 +148,41 @@ def list_wakeup_clips():
 def play_wakeup_clip():
     try:
         index = int(request.json.get("index"))
+        persona_name = request.json.get("persona")  # Get persona from request
+
         if index < 1 or index > 99:
             return jsonify({"error": "Invalid clip index"}), 400
-        sound_path = os.path.join(
-            PROJECT_ROOT, "sounds", "wake-up", "custom", f"{index}.wav"
-        )
+
+        # If no persona specified, get current persona from persona manager
+        if not persona_name:
+            try:
+                from core.persona_manager import persona_manager
+
+                persona_name = persona_manager.current_persona
+            except Exception:
+                persona_name = "default"
+
+        # Check appropriate directory based on persona
+        sound_path = None
+        if persona_name and persona_name != "default":
+            # For non-default personas, check persona-specific directory
+            persona_sound_path = os.path.join(
+                PROJECT_ROOT, "personas", persona_name, "wakeup", f"{index}.wav"
+            )
+            if os.path.exists(persona_sound_path):
+                sound_path = persona_sound_path
+        elif persona_name == "default":
+            # For default persona, use custom directory
+            sound_path = os.path.join(
+                PROJECT_ROOT, "sounds", "wake-up", "custom", f"{index}.wav"
+            )
+
+        # If no sound path found yet, check custom directory as fallback
+        if not sound_path:
+            sound_path = os.path.join(
+                PROJECT_ROOT, "sounds", "wake-up", "custom", f"{index}.wav"
+            )
+
         if not os.path.exists(sound_path):
             return jsonify({"error": f"Clip {index}.wav not found"}), 404
         card_index = get_usb_pcm_card_index()
@@ -137,10 +203,22 @@ def generate_wakeup_clip():
     data = request.get_json()
     prompt = data.get("text", "").strip()
     index = data.get("index")
+    persona_name = data.get("persona")  # Get persona from request
+
     if not prompt or index is None:
         return jsonify({"error": "Missing 'text' or 'index'"}), 400
+
+    # If no persona specified, get current persona from persona manager
+    if not persona_name:
+        try:
+            from core.persona_manager import persona_manager
+
+            persona_name = persona_manager.current_persona
+        except Exception:
+            persona_name = "default"
+
     try:
-        path = generate_wake_clip_async(prompt, index)
+        path = generate_wake_clip_async(prompt, index, persona_name)
         return jsonify({"status": "ok", "path": path})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -150,8 +228,27 @@ def generate_wakeup_clip():
 def remove_wakeup_clip():
     data = request.get_json()
     index_to_remove = str(data.get("index"))
+
+    # Get current persona to determine which file to modify
+    current_persona = "default"
+    try:
+        from core.persona_manager import persona_manager
+
+        current_persona = persona_manager.current_persona
+    except Exception:
+        pass
+
+    # Determine the file path based on current persona
+    if current_persona == "default":
+        persona_file = PERSONA_PATH
+    else:
+        from pathlib import Path
+
+        personas_dir = Path("personas")
+        persona_file = personas_dir / current_persona / "persona.ini"
+
     config = configparser.ConfigParser()
-    config.read(PERSONA_PATH)
+    config.read(persona_file)
     if "WAKEUP" not in config:
         return jsonify({"error": "No wakeup section found"}), 400
     wakeup = dict(config["WAKEUP"])
@@ -164,7 +261,7 @@ def remove_wakeup_clip():
         new_wakeup[str(i)] = phrase
         old_to_new_index[old_k] = str(i)
     config["WAKEUP"] = new_wakeup
-    with open(PERSONA_PATH, "w") as f:
+    with open(persona_file, "w") as f:
         config.write(f)
     audio_path_num = WAKE_UP_DIR / f"{index_to_remove}.wav"
     audio_path_slug = (

@@ -21,6 +21,7 @@ def create_app() -> Flask:
     from .routes.audio import bp as audio_bp
     from .routes.misc import bp as misc_bp
     from .routes.persona import bp as persona_bp
+    from .routes.profiles import profiles_bp
     from .routes.system import bp as system_bp
     from .state import bootstrap_versions_and_release_note
 
@@ -30,6 +31,7 @@ def create_app() -> Flask:
     # Register blueprints
     app.register_blueprint(system_bp)
     app.register_blueprint(persona_bp)
+    app.register_blueprint(profiles_bp)
     app.register_blueprint(audio_bp)
     app.register_blueprint(misc_bp)
 

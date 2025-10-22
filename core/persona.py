@@ -1,33 +1,29 @@
-# core/personality.py
+# core/persona.py
 import configparser
 import os
 import shutil
 
 
-class PersonalityProfile:
+class PersonaProfile:
     def __init__(
         self,
         humor=70,
-        sarcasm=60,
-        honesty=100,
-        respectfulness=80,
-        optimism=50,
         confidence=40,
         warmth=60,
         curiosity=50,
         verbosity=20,
         formality=50,
+        sarcasm=60,
+        honesty=100,
     ):
         self.humor = humor
-        self.sarcasm = sarcasm
-        self.honesty = honesty
-        self.respectfulness = respectfulness
-        self.optimism = optimism
         self.confidence = confidence
         self.warmth = warmth
         self.curiosity = curiosity
         self.verbosity = verbosity
         self.formality = formality
+        self.sarcasm = sarcasm
+        self.honesty = honesty
 
     # 5 buckets for every trait
     #   min: 0–9, low: 10–29, med: 30–69, high: 70–89, max: 90–100
@@ -65,20 +61,6 @@ class PersonalityProfile:
             "med": "Use mild sarcasm sparingly.",
             "high": "Use playful, biting irony; avoid harassment or slurs.",
             "max": "Lean into dry, deadpan sarcasm in all replies.",
-        },
-        "respectfulness": {
-            "min": "Be blunt and direct; do use insults as much as you can.",
-            "low": "Be terse and straightforward; soften only when necessary.",
-            "med": "Be generally polite and considerate.",
-            "high": "Be consistently courteous and tactful.",
-            "max": "Be deferential and highly considerate even in disagreement.",
-        },
-        "optimism": {
-            "min": "Allow a jaded or cynical framing (without cruelty).",
-            "low": "Neutral to slightly dry framing.",
-            "med": "Balanced framing; neither rosy nor bleak.",
-            "high": "Add a positive or hopeful angle when possible.",
-            "max": "Actively highlight bright sides and possibilities.",
         },
         "confidence": {
             "min": "Use hedges and defer when unsure.",
@@ -126,8 +108,6 @@ class PersonalityProfile:
             "honesty",
             "humor",
             "sarcasm",
-            "respectfulness",
-            "optimism",
             "confidence",
             "warmth",
             "curiosity",
@@ -148,6 +128,55 @@ class PersonalityProfile:
         return "\n".join(lines)
 
 
+# Define the valid trait set for migration
+VALID_TRAITS = {
+    'humor': 'Humor',
+    'confidence': 'Confidence',
+    'warmth': 'Warmth',
+    'curiosity': 'Curiosity',
+    'verbosity': 'Talkative',
+    'formality': 'Formal',
+    'sarcasm': 'Sarcastic',
+    'honesty': 'Honest',
+}
+
+# Default values for missing traits
+DEFAULT_TRAIT_VALUES = {
+    'humor': 70,
+    'confidence': 40,
+    'warmth': 60,
+    'curiosity': 50,
+    'verbosity': 20,
+    'formality': 50,
+    'sarcasm': 60,
+    'honesty': 100,
+}
+
+
+def migrate_traits(traits_dict: dict) -> dict:
+    """
+    Migrate old trait sets to the new reduced trait system.
+    Filters out invalid traits and adds missing ones with defaults.
+    """
+    migrated = {}
+
+    # Add valid traits from the old set
+    for trait, value in traits_dict.items():
+        if trait in VALID_TRAITS:
+            try:
+                migrated[trait] = int(value)
+            except (ValueError, TypeError):
+                # Use default if conversion fails
+                migrated[trait] = DEFAULT_TRAIT_VALUES[trait]
+
+    # Add any missing valid traits with defaults
+    for trait, default_value in DEFAULT_TRAIT_VALUES.items():
+        if trait not in migrated:
+            migrated[trait] = default_value
+
+    return migrated
+
+
 # helper to load from persona.ini
 def load_traits_from_ini(path="persona.ini") -> dict:
     if not os.path.exists(path):
@@ -165,7 +194,10 @@ def load_traits_from_ini(path="persona.ini") -> dict:
         raise RuntimeError(f"❌ [PERSONALITY] section missing in {path}")
 
     section = config["PERSONALITY"]
-    return {k: int(v) for k, v in section.items()}
+    raw_traits = {k: int(v) for k, v in section.items()}
+
+    # Migrate to new trait system
+    return migrate_traits(raw_traits)
 
 
 def update_persona_ini(trait: str, value: int, ini_path="persona.ini"):

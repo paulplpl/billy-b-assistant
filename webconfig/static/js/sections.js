@@ -5,8 +5,10 @@ const Sections = (() => {
             const header = section.querySelector('h3');
             if (!header) return;
 
-            let icon = header.querySelector('.material-icons');
-            if (!icon) {
+            // Look for existing expand_more icon first
+            let icon = header.querySelector('.material-icons:last-child');
+            if (!icon || icon.textContent !== 'expand_more') {
+                // Create expand_more icon if it doesn't exist
                 icon = document.createElement('span');
                 icon.className = 'material-icons transition-transform duration-200 ml-2 rotate-0';
                 icon.textContent = 'expand_more';
@@ -21,6 +23,18 @@ const Sections = (() => {
             icon.classList.toggle('rotate-180', !collapsed);
             icon.classList.toggle('rotate-0', collapsed);
             header.classList.toggle('mb-4', !collapsed);
+            
+            // Update icon colors based on active state
+            const sectionIcon = header.querySelector('.material-icons:first-child');
+            if (sectionIcon) {
+                if (collapsed) {
+                    sectionIcon.classList.remove('text-emerald-400');
+                    sectionIcon.classList.add('text-white');
+                } else {
+                    sectionIcon.classList.remove('text-white');
+                    sectionIcon.classList.add('text-emerald-400');
+                }
+            }
 
             [...section.children].forEach(child => {
                 if (child !== header && !child.classList.contains('force-hidden')) {
@@ -35,6 +49,18 @@ const Sections = (() => {
                 icon.classList.toggle('rotate-0', collapsed);
                 header.classList.toggle('mb-4', !collapsed);
                 localStorage.setItem('collapse_' + id, collapsed ? 'closed' : 'open');
+                
+                // Update icon colors based on active state
+                const sectionIcon = header.querySelector('.material-icons:first-child');
+                if (sectionIcon) {
+                    if (collapsed) {
+                        sectionIcon.classList.remove('text-emerald-400');
+                        sectionIcon.classList.add('text-white');
+                    } else {
+                        sectionIcon.classList.remove('text-white');
+                        sectionIcon.classList.add('text-emerald-400');
+                    }
+                }
             });
         });
     }
