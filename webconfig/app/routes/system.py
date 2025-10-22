@@ -198,7 +198,7 @@ def get_config():
     # Add user profile information
     try:
         from core.config import DEFAULT_USER
-        from core.user_profiles import user_manager
+        from core.profile_manager import user_manager
 
         # Get current user from .env file (already reloaded above)
         current_user_name = (
@@ -248,7 +248,7 @@ def get_config():
 
         # Add available profiles with full data including preferred personas
         try:
-            from core.user_profiles import UserProfile
+            from core.profile_manager import UserProfile
 
             available_profiles = []
             for user_name in user_manager.list_all_users():
@@ -293,7 +293,7 @@ def update_current_user_profile():
     """Update the current user's profile settings."""
     try:
         from core.persona_manager import persona_manager
-        from core.user_profiles import user_manager
+        from core.profile_manager import user_manager
 
         data = request.get_json()
         if not data:
@@ -385,7 +385,7 @@ def auto_refresh_config():
         # Add user profile information
         try:
             from core.config import DEFAULT_USER
-            from core.user_profiles import user_manager
+            from core.profile_manager import user_manager
 
             # Get current user from .env file (fresh read)
             current_user_name = os.getenv("CURRENT_USER", "").strip().strip("'\"")
@@ -429,7 +429,7 @@ def auto_refresh_config():
 
             # Add available profiles with full data including preferred personas
             try:
-                from core.user_profiles import UserProfile
+                from core.profile_manager import UserProfile
 
                 available_profiles = []
                 for user_name in user_manager.list_all_users():

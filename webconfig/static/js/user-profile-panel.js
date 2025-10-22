@@ -10,6 +10,8 @@ class UserProfilePanel {
         this.lastStatus = null;
         this.statusInterval = null;
         this.pendingDisplayName = null; // Store pending display name changes
+        this.lastLoadTime = 0;
+        this.loadDebounceMs = 100; // Debounce loadAllData calls
     }
 
     bindUI() {
@@ -73,7 +75,14 @@ class UserProfilePanel {
         this.bindDisplayNameManagement();
     }
 
-    async loadAllData() {
+    async loadAllData(force = false) {
+        // Debounce repeated calls, but allow forced reloads
+        const now = Date.now();
+        if (!force && now - this.lastLoadTime < this.loadDebounceMs) {
+            return;
+        }
+        this.lastLoadTime = now;
+        
         try {
             const data = await ConfigService.fetchConfig();
             if (data) {
@@ -279,7 +288,6 @@ class UserProfilePanel {
             // Get display name for the profile
             const displayName = this.getDisplayName(profileName, profile);
             
-            console.log(`Creating tile for ${profileName} (display: ${displayName}), isCurrent: ${isCurrent}, isDefault: ${isDefault}`);
             
             const tile = document.createElement('div');
             const baseClasses = 'relative rounded-lg p-4 cursor-pointer transition-all duration-200 hover:bg-zinc-600 border-2 min-h-[120px] flex flex-col justify-center group';
@@ -509,15 +517,12 @@ class UserProfilePanel {
             // Use pending display name if it exists, otherwise load from server
             if (this.pendingDisplayName !== null) {
                 displayNameInput.value = this.pendingDisplayName;
-                console.log('Using pending display name:', this.pendingDisplayName);
             } else {
                 // Load from server
                 const data = await ConfigService.fetchConfig();
-                console.log('Loading display name from server, data.CURRENT_USER:', data.CURRENT_USER);
                 if (data && data.CURRENT_USER && data.CURRENT_USER.data && data.CURRENT_USER.data.USER_INFO && data.CURRENT_USER.data.USER_INFO.display_name) {
                     const displayName = data.CURRENT_USER.data.USER_INFO.display_name;
                     displayNameInput.value = displayName;
-                    console.log('Loaded display name from server:', displayName);
                 } else {
                     // Fallback to user name if no display name set
                     displayNameInput.value = this.currentUser;
@@ -550,7 +555,6 @@ class UserProfilePanel {
         // Enable save button when display name is modified
         this.enableSaveButton();
         
-        console.log('Display name changed to:', newDisplayName);
     }
 
 
@@ -596,21 +600,20 @@ class UserProfilePanel {
                 console.log('Refreshing data after setting current user to:', profileName);
                 // Small delay to ensure .env file is written and backend processed it
                 await new Promise(resolve => setTimeout(resolve, 100));
-                await this.loadAllData();
-                console.log('After refresh, currentUser is:', this.currentUser);
+                await this.loadAllData(true);
                 
                 // Force update the profile list to show active state
                 this.updateProfileList();
                 
-                // Load the user's preferred persona in the persona form
-                await this.loadUserPreferredPersona(profileName);
+                 // Load the user's preferred persona in the persona form (non-blocking)
+                 this.loadUserPreferredPersona(profileName);
                 
                 // Show success notification with display name
                 const displayName = this.getDisplayName(profileName, this.profiles.find(p => (typeof p === 'string' ? p : p.name) === profileName));
                 this.showNotification(`Set ${displayName} as current user`, 'success');
                 
-                // Wait for the profile tile to get the green border (active state) before hiding loader
-                this.waitForProfileActiveState(profileName);
+                 // Hide loading state immediately - UI updates are synchronous
+                 this.hideProfileLoading(profileName);
             } else {
                 this.hideProfileLoading(profileName);
                 this.showNotification('Failed to set current user', 'error');
@@ -647,20 +650,19 @@ class UserProfilePanel {
                 console.log('Refreshing data after setting guest user');
                 // Small delay to ensure .env file is written and backend processed it
                 await new Promise(resolve => setTimeout(resolve, 100));
-                await this.loadAllData();
-                console.log('After refresh, currentUser is:', this.currentUser);
+                await this.loadAllData(true);
                 
                 // Force update the profile list to show active state
                 this.updateProfileList();
                 
-                // Load the default persona for guest mode
-                await this.loadUserPreferredPersona('guest');
+                 // Load the default persona for guest mode (non-blocking)
+                 this.loadUserPreferredPersona('guest');
                 
                 // Show success notification
                 this.showNotification('Set as guest user', 'success');
                 
-                // Wait for the guest tile to get the green border (active state) before hiding loader
-                this.waitForProfileActiveState('guest');
+                 // Hide loading state immediately - UI updates are synchronous
+                 this.hideProfileLoading('guest');
             } else {
                 this.hideProfileLoading('guest');
                 this.showNotification('Failed to set as guest', 'error');
@@ -922,8 +924,16 @@ class UserProfilePanel {
                     }
                     
                     if (hasChanges) {
-                        // Refresh the UI
-                        await this.loadAllData();
+                        // For user changes, add a small delay to ensure data is loaded
+                        if (this.lastStatus.current_user !== status.current_user) {
+                            console.log('User change detected, waiting for data to load...');
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            // Force reload for user changes
+                            await this.loadAllData(true);
+                        } else {
+                            // Refresh the UI
+                            await this.loadAllData();
+                        }
                         
                         // Notify other components if they exist
                         if (window.SettingsForm && window.SettingsForm.refreshFromConfig) {
@@ -974,13 +984,17 @@ class UserProfilePanel {
                     const currentUserData = await this.getCurrentUserData();
                     if (currentUserData && currentUserData.data && currentUserData.data.USER_INFO) {
                         const preferredPersona = currentUserData.data.USER_INFO.preferred_persona || 'default';
-                        console.log(`Setting persona selector to ${preferredPersona} for user ${this.currentUser}`);
-                        personaSelect.value = preferredPersona;
+                        if (personaSelect.value !== preferredPersona) {
+                            console.log(`Setting persona selector to ${preferredPersona} for user ${this.currentUser}`);
+                            personaSelect.value = preferredPersona;
+                        }
                     }
                 } else {
                     // For guest mode or no user, set to default
-                    console.log('Setting persona selector to default for guest mode');
-                    personaSelect.value = 'default';
+                    if (personaSelect.value !== 'default') {
+                        console.log('Setting persona selector to default for guest mode');
+                        personaSelect.value = 'default';
+                    }
                 }
             }
         } catch (error) {
@@ -1038,48 +1052,15 @@ class UserProfilePanel {
         }
     }
 
-    // Wait for profile to get active state (green border) before hiding loader
-    waitForProfileActiveState(profileName) {
-        const checkActiveState = () => {
-            const profileTile = document.querySelector(`[data-profile="${profileName}"]`);
-            if (profileTile) {
-                // Check if the tile has the active classes (green border)
-                const hasActiveClasses = profileTile.classList.contains('border-emerald-500') && 
-                                        profileTile.classList.contains('bg-zinc-600');
-                
-                if (hasActiveClasses) {
-                    // Profile is now active, hide the loader
-                    this.hideProfileLoading(profileName);
-                } else {
-                    // Still not active, check again in 50ms
-                    setTimeout(checkActiveState, 50);
-                }
-            } else {
-                // Profile tile not found, hide loader anyway
-                this.hideProfileLoading(profileName);
-            }
-        };
-        
-        // Start checking after a small delay to allow DOM updates
-        setTimeout(checkActiveState, 100);
-    }
 
-    // Load the user's preferred persona in the persona form
-    async loadUserPreferredPersona(userName) {
-        try {
-            // Wait for PersonaForm to be available
-            let retries = 0;
-            const maxRetries = 10;
-            
-            while (!window.PersonaForm || !window.PersonaForm.loadPersona) {
-                if (retries >= maxRetries) {
-                    console.warn('PersonaForm not available after retries, skipping persona loading');
-                    return;
-                }
-                console.log(`Waiting for PersonaForm to be available... (attempt ${retries + 1})`);
-                await new Promise(resolve => setTimeout(resolve, 100));
-                retries++;
-            }
+     // Load the user's preferred persona in the persona form
+     async loadUserPreferredPersona(userName) {
+         try {
+             // Quick check if PersonaForm is available, skip if not
+             if (!window.PersonaForm || !window.PersonaForm.loadPersona) {
+                 console.warn('PersonaForm not available, skipping persona loading');
+                 return;
+             }
 
             let personaToLoad = 'default'; // Default for guest mode
             
@@ -1091,17 +1072,13 @@ class UserProfilePanel {
                 }
             }
             
-            console.log(`Loading preferred persona "${personaToLoad}" for user "${userName}"`);
-            
-            // Load the persona in the persona form
-            await window.PersonaForm.loadPersona(personaToLoad);
-            
-            // Update the persona list to show the loaded persona as active
-            if (window.PersonaForm.updatePersonaListSelection) {
-                window.PersonaForm.updatePersonaListSelection(personaToLoad);
-            }
-            
-            console.log(`Successfully loaded persona "${personaToLoad}" for user "${userName}"`);
+             // Load the persona in the persona form
+             await window.PersonaForm.loadPersona(personaToLoad);
+             
+             // Update the persona list to show the loaded persona as active
+             if (window.PersonaForm.updatePersonaListSelection) {
+                 window.PersonaForm.updatePersonaListSelection(personaToLoad);
+             }
             
         } catch (error) {
             console.error('Failed to load user preferred persona:', error);

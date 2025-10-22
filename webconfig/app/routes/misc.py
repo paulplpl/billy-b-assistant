@@ -65,7 +65,7 @@ def service_status():
             from dotenv import load_dotenv
 
             from core.persona_manager import persona_manager
-            from core.user_profiles import user_manager
+            from core.profile_manager import user_manager
 
             # Get project root and .env path
             project_root = os.path.dirname(

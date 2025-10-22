@@ -3,9 +3,13 @@ const AudioPanel = (() => {
     let micCheckSource = null;
 
     const micCheckBtn = document.getElementById("mic-check-btn");
-    micCheckBtn.addEventListener("click", toggleMicCheck);
+    if (micCheckBtn) {
+        micCheckBtn.addEventListener("click", toggleMicCheck);
+    }
 
-    document.getElementById("speaker-check-btn").addEventListener("click", async () => {
+    const speakerCheckBtn = document.getElementById("speaker-check-btn");
+    if (speakerCheckBtn) {
+        speakerCheckBtn.addEventListener("click", async () => {
         try {
             const data = await ServiceStatus.fetchStatus();
             if (data.status === "active") {
@@ -18,7 +22,8 @@ const AudioPanel = (() => {
             console.error("Failed to trigger speaker test:", err);
             showNotification("Failed to trigger speaker test", "error");
         }
-    });
+        });
+    }
 
     async function toggleMicCheck() {
         const btn = micCheckBtn;
@@ -104,52 +109,64 @@ const AudioPanel = (() => {
         }
     }
 
-    document.getElementById("mic-gain").addEventListener("input", async () => {
-        const value = parseInt(document.getElementById("mic-gain").value, 10);
-        await fetch("/mic-gain", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({value})
+    const micGainElement = document.getElementById("mic-gain");
+    if (micGainElement) {
+        micGainElement.addEventListener("input", async () => {
+            const value = parseInt(micGainElement.value, 10);
+            await fetch("/mic-gain", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({value})
+            });
+            const micGainValue = document.getElementById("mic-gain-value");
+            if (micGainValue) {
+                micGainValue.textContent = value;
+            }
         });
-        document.getElementById("mic-gain-value").textContent = value;
-    });
+    }
 
     let micBar = document.getElementById("mic-bar-container");
     let thresholdLine = document.getElementById("threshold-line");
     let silenceThresholdInput = document.getElementById("SILENCE_THRESHOLD");
-    let dragging = false;
-    thresholdLine.addEventListener("mousedown", (e) => { dragging = true; e.preventDefault(); });
-    document.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
-        const rect = micBar.getBoundingClientRect();
-        if (rect.width === 0) return;
-        let offsetX = e.clientX - rect.left;
-        offsetX = Math.max(0, Math.min(offsetX, rect.width));
-        const percent = offsetX / rect.width;
-        const scaledThreshold = Math.round(percent * 32768);
-        thresholdLine.style.left = `${percent * 100}%`;
-        silenceThresholdInput.value = scaledThreshold;
-    });
-    document.addEventListener("mouseup", () => { dragging = false; });
-    window.addEventListener("load", () => {
-        const threshold = parseInt(silenceThresholdInput.value || "1000", 10);
-        thresholdLine.style.left = `${(threshold / 32768) * 100}%`;
-    });
+    
+    if (thresholdLine && micBar && silenceThresholdInput) {
+        let dragging = false;
+        thresholdLine.addEventListener("mousedown", (e) => { dragging = true; e.preventDefault(); });
+        document.addEventListener("mousemove", (e) => {
+            if (!dragging) return;
+            const rect = micBar.getBoundingClientRect();
+            if (rect.width === 0) return;
+            let offsetX = e.clientX - rect.left;
+            offsetX = Math.max(0, Math.min(offsetX, rect.width));
+            const percent = offsetX / rect.width;
+            const scaledThreshold = Math.round(percent * 32768);
+            thresholdLine.style.left = `${percent * 100}%`;
+            silenceThresholdInput.value = scaledThreshold;
+        });
+        document.addEventListener("mouseup", () => { dragging = false; });
+        window.addEventListener("load", () => {
+            const threshold = parseInt(silenceThresholdInput.value || "1000", 10);
+            thresholdLine.style.left = `${(threshold / 32768) * 100}%`;
+        });
+    }
 
     const speakerSlider = document.getElementById("speaker-volume");
-    fetch("/volume")
-        .then(res => res.json())
-        .then(data => {
-            if (data.volume !== undefined) {
-                speakerSlider.value = data.volume;
-                const fill = document.getElementById("speaker-volume-fill");
-                const percent = (data.volume / 100) * 100;
-                fill.style.width = `${percent}%`;
-                fill.dataset.value = data.volume;
-            }
-        });
-    let volumeDebounceTimeout;
-    speakerSlider.addEventListener("input", () => {
+    if (speakerSlider) {
+        fetch("/volume")
+            .then(res => res.json())
+            .then(data => {
+                if (data.volume !== undefined) {
+                    speakerSlider.value = data.volume;
+                    const fill = document.getElementById("speaker-volume-fill");
+                    if (fill) {
+                        const percent = (data.volume / 100) * 100;
+                        fill.style.width = `${percent}%`;
+                        fill.dataset.value = data.volume;
+                    }
+                }
+            });
+        let volumeDebounceTimeout;
+        speakerSlider.addEventListener("input", () => {
         clearTimeout(volumeDebounceTimeout);
         volumeDebounceTimeout = setTimeout(() => {
             fetch("/volume", {
@@ -158,7 +175,8 @@ const AudioPanel = (() => {
                 body: JSON.stringify({volume: parseInt(speakerSlider.value)})
             }).catch(err => console.error("Failed to set speaker volume:", err));
         }, 500);
-    });
+        });
+    }
 
     async function updateDeviceLabels() {
         try {
@@ -180,5 +198,8 @@ const AudioPanel = (() => {
 
     return {loadMicGain, updateDeviceLabels};
 })();
+
+// Make AudioPanel globally available
+window.AudioPanel = AudioPanel;
 
 

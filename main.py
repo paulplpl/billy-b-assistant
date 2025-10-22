@@ -70,7 +70,7 @@ def main():
     core.button.start_loop()
 
     # Load default user profile
-    from core.user_profiles import user_manager
+    from core.profile_manager import user_manager
 
     user_manager.load_default_user()
 

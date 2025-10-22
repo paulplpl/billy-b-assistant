@@ -33,6 +33,10 @@ const PersonaForm = (() => {
 
     const renderPersonalitySliders = (personality) => {
         const container = document.getElementById("personality-sliders");
+        if (!container) {
+            console.error('personality-sliders container not found!');
+            return;
+        }
         container.innerHTML = "";
 
         // Define the core personality traits with descriptions
@@ -77,6 +81,23 @@ const PersonaForm = (() => {
             }
         }
         
+        // Helper functions for level management
+        const getLevel = (val) => {
+            if (val < 10) return "min";
+            if (val < 30) return "low";
+            if (val < 70) return "med";
+            if (val < 90) return "high";
+            return "max";
+        };
+        
+        const getLevelColor = (val) => {
+            if (val < 10) return "text-red-400";
+            if (val < 30) return "text-orange-400";
+            if (val < 70) return "text-yellow-400";
+            if (val < 90) return "text-green-400";
+            return "text-emerald-400";
+        };
+
         for (const [key, value] of Object.entries(traitsToRender)) {
             const wrapper = document.createElement("div");
             wrapper.className = "flex gap-2 space-y-1";
@@ -86,42 +107,83 @@ const PersonaForm = (() => {
             const displayName = coreTraits[key] || key;
             label.innerHTML = `<span>${displayName}</span>`;
 
-            const barContainer = document.createElement("div");
-            barContainer.className = "relative w-full rounded-full bg-zinc-700 overflow-hidden cursor-pointer";
-            barContainer.style.userSelect = "none";
+            // Create the main slider container
+            const sliderContainer = document.createElement("div");
+            sliderContainer.className = "flex flex-col w-full";
 
-            const fillBar = document.createElement("div");
-            fillBar.className = "absolute left-0 top-0 h-full bg-emerald-500 transition-all duration-100";
-            fillBar.style.width = `${value}%`;
-            fillBar.dataset.fillFor = key;
+            // Create 5-block discrete slider
+            const blockSlider = document.createElement("div");
+            blockSlider.className = "flex w-full gap-1";
+            blockSlider.style.userSelect = "none";
 
-            barContainer.appendChild(fillBar);
+            // Define the 5 levels
+            const levels = [
+                { name: 'min', range: [0, 9], color: 'bg-red-500' },
+                { name: 'low', range: [10, 29], color: 'bg-orange-500' },
+                { name: 'med', range: [30, 69], color: 'bg-yellow-500' },
+                { name: 'high', range: [70, 89], color: 'bg-emerald-500' },
+                { name: 'max', range: [90, 100], color: 'bg-violet-500' }
+            ];
 
-            const valueLabel = document.createElement("span");
-            valueLabel.id = `${key}-value`;
-            valueLabel.className = "text-zinc-400 w-4";
-            valueLabel.textContent = value;
+            // Remove numeric display - no longer showing 0-100 values
 
-            let isDragging = false;
-            const updateValue = (e) => {
-                const rect = barContainer.getBoundingClientRect();
-                const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-                const newVal = Math.round(percent * 100);
-                fillBar.style.width = `${newVal}%`;
-                valueLabel.textContent = newVal;
-                fillBar.setAttribute("data-value", newVal);
+            // Function to update the block slider
+            const updateBlockSlider = (slider, newValue, traitKey) => {
+                // Update all blocks
+                const blocks = slider.querySelectorAll('[data-level]');
+                blocks.forEach(block => {
+                    const minVal = parseInt(block.dataset.minValue);
+                    const maxVal = parseInt(block.dataset.maxValue);
+                    const isActive = newValue >= minVal && newValue <= maxVal;
+                    
+                    if (isActive) {
+                        // Active block: show color, text, and border
+                        const color = block.dataset.color;
+                        const label = block.dataset.label;
+                        block.className = `flex-1 h-6 rounded cursor-pointer transition-all duration-200 hover:opacity-80 ${color} flex items-center justify-center text-xs font-medium text-slate-200`;
+                        block.textContent = label;
+                    } else {
+                        // Inactive block: dark grey background, no text
+                        block.className = `flex-1 h-6 rounded cursor-pointer transition-all duration-200 hover:opacity-80 bg-zinc-700 flex items-center justify-center text-xs font-medium text-slate-200`;
+                        block.textContent = '';
+                    }
+                });
             };
 
-            barContainer.addEventListener("mousedown", (e) => {
-                isDragging = true;
-                updateValue(e);
+            // Create blocks
+            levels.forEach((level, index) => {
+                const block = document.createElement("div");
+                // Default to dark grey background, no text
+                block.className = `flex-1 h-6 rounded cursor-pointer transition-all duration-200 hover:opacity-80 bg-zinc-700 flex items-center justify-center text-xs font-medium text-slate-200`;
+                block.dataset.level = level.name;
+                block.dataset.minValue = level.range[0];
+                block.dataset.maxValue = level.range[1];
+                block.dataset.color = level.color;
+                block.dataset.label = level.name;
+                
+                // Check if current value falls in this level
+                const isActive = value >= level.range[0] && value <= level.range[1];
+                if (isActive) {
+                    // Active block: show color, text, and border
+                    block.className = `flex-1 h-6 rounded cursor-pointer transition-all duration-200 hover:opacity-80 ${level.color} flex items-center justify-center text-xs font-medium text-slate-200`;
+                    block.textContent = level.name;
+                }
+                
+                // Add click handler
+                block.addEventListener('click', () => {
+                    // Set value to middle of the range
+                    const newValue = Math.round((level.range[0] + level.range[1]) / 2);
+                    updateBlockSlider(blockSlider, newValue, key);
+                });
+                
+                blockSlider.appendChild(block);
             });
-            document.addEventListener("mousemove", (e) => { if (isDragging) updateValue(e); });
-            document.addEventListener("mouseup", () => { isDragging = false; });
+
+            // Assemble the slider container
+            sliderContainer.appendChild(blockSlider);
 
             wrapper.appendChild(label);
-            wrapper.appendChild(barContainer);
-            wrapper.appendChild(valueLabel);
+            wrapper.appendChild(sliderContainer);
             container.appendChild(wrapper);
         }
     };
@@ -152,8 +214,16 @@ const PersonaForm = (() => {
         updateUI(Number(input.value));
     }
 
-    setupSlider("mic-gain-bar", "mic-gain-fill", "mic-gain", 0, 16);
-    setupSlider("speaker-volume-bar", "speaker-volume-fill",  "speaker-volume", 0, 100);
+    // Only setup sliders if the elements exist (they're now in the settings modal)
+    const micGainBar = document.getElementById("mic-gain-bar");
+    const speakerVolumeBar = document.getElementById("speaker-volume-bar");
+    
+    if (micGainBar) {
+        setupSlider("mic-gain-bar", "mic-gain-fill", "mic-gain", 0, 16);
+    }
+    if (speakerVolumeBar) {
+        setupSlider("speaker-volume-bar", "speaker-volume-fill", "speaker-volume", 0, 100);
+    }
 
     const renderBackstoryFields = (backstory) => {
         const container = document.getElementById("backstory-fields");
@@ -199,11 +269,11 @@ const PersonaForm = (() => {
             // Set voice from persona data, or default to 'ballad' if not specified
             const voice = data.META?.voice || 'ballad';
             voiceSelect.value = voice;
-            console.log(`Loaded voice for ${personaName}: ${voice}`);
         }
 
         
-        await loadWakeupClips();
+        // Load wakeup clips in background (non-blocking)
+        loadWakeupClips();
     };
 
 
@@ -237,9 +307,37 @@ const PersonaForm = (() => {
             const wasActive = statusData.status;
 
             const personality = {};
-            document.querySelectorAll("#personality-sliders div[data-fill-for]").forEach((bar) => {
-                const trait = bar.dataset.fillFor;
-                personality[trait] = parseInt(bar.style.width);
+            // Get trait values from the block sliders
+            document.querySelectorAll("#personality-sliders .flex.w-full.gap-1").forEach((slider) => {
+                // Find the active block (has text content)
+                const activeBlock = Array.from(slider.querySelectorAll('[data-level]')).find(block => block.textContent !== '');
+                if (activeBlock) {
+                    // Get the trait name from the label in the same wrapper
+                    const wrapper = slider.closest('.flex.gap-2');
+                    const label = wrapper?.querySelector('.text-slate-300');
+                    if (label) {
+                        // Extract trait name from the label text
+                        const traitDisplay = label.textContent.trim();
+                        // Map display names back to trait keys
+                        const traitMap = {
+                            'Humor': 'humor',
+                            'Confidence': 'confidence',
+                            'Warmth': 'warmth',
+                            'Curiosity': 'curiosity',
+                            'Talkative': 'verbosity',
+                            'Formal': 'formality',
+                            'Sarcastic': 'sarcasm',
+                            'Honest': 'honesty'
+                        };
+                        const traitKey = traitMap[traitDisplay];
+                        if (traitKey) {
+                            // Calculate value from the block's range
+                            const minVal = parseInt(activeBlock.dataset.minValue);
+                            const maxVal = parseInt(activeBlock.dataset.maxValue);
+                            personality[traitKey] = Math.round((minVal + maxVal) / 2);
+                        }
+                    }
+                }
             });
 
             const backstory = {};
@@ -533,9 +631,37 @@ const PersonaForm = (() => {
             
             // Get current persona data using the same logic as handlePersonaSave
             const personality = {};
-            document.querySelectorAll("#personality-sliders div[data-fill-for]").forEach((bar) => {
-                const trait = bar.dataset.fillFor;
-                personality[trait] = parseInt(bar.style.width);
+            // Get trait values from the block sliders
+            document.querySelectorAll("#personality-sliders .flex.w-full.gap-1").forEach((slider) => {
+                // Find the active block (has text content)
+                const activeBlock = Array.from(slider.querySelectorAll('[data-level]')).find(block => block.textContent !== '');
+                if (activeBlock) {
+                    // Get the trait name from the label in the same wrapper
+                    const wrapper = slider.closest('.flex.gap-2');
+                    const label = wrapper?.querySelector('.text-slate-300');
+                    if (label) {
+                        // Extract trait name from the label text
+                        const traitDisplay = label.textContent.trim();
+                        // Map display names back to trait keys
+                        const traitMap = {
+                            'Humor': 'humor',
+                            'Confidence': 'confidence',
+                            'Warmth': 'warmth',
+                            'Curiosity': 'curiosity',
+                            'Talkative': 'verbosity',
+                            'Formal': 'formality',
+                            'Sarcastic': 'sarcasm',
+                            'Honest': 'honesty'
+                        };
+                        const traitKey = traitMap[traitDisplay];
+                        if (traitKey) {
+                            // Calculate value from the block's range
+                            const minVal = parseInt(activeBlock.dataset.minValue);
+                            const maxVal = parseInt(activeBlock.dataset.maxValue);
+                            personality[traitKey] = Math.round((minVal + maxVal) / 2);
+                        }
+                    }
+                }
             });
 
             const backstory = {};

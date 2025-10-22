@@ -21,6 +21,7 @@ from .config import (
     OPENAI_MODEL,
     PERSONALITY,
     RUN_MODE,
+    SERVER_VAD_PARAMS,
     SILENCE_THRESHOLD,
     TEXT_ONLY_MODE,
     TURN_EAGERNESS,
@@ -32,7 +33,7 @@ from .movements import move_tail_async, stop_all_motors
 from .mqtt import mqtt_publish
 from .persona import update_persona_ini
 from .persona_manager import persona_manager
-from .user_profiles import user_manager
+from .profile_manager import user_manager
 
 
 def get_instructions_with_user_context():
@@ -58,11 +59,11 @@ def get_instructions_with_user_context():
         )
         # In guest mode, use default persona traits (no need to modify personality section)
         return INSTRUCTIONS.replace(
-            "👤 USER RECOGNITION: ALWAYS call `identify_user` at conversation start. Greet users by name when known.",
-            "👤 GUEST MODE: You are in guest mode. If someone introduces themselves (e.g., 'Hey billy it is tom', 'I am Tom', 'My name is Sarah'), you MUST IMMEDIATELY call `identify_user` tool BEFORE responding. This switches you to user mode. Otherwise treat everyone as a guest visitor.",
+            "USER RECOGNITION: ALWAYS call `identify_user` at conversation start. Greet users by name when known.",
+            "GUEST MODE: You are in guest mode. If someone introduces themselves (e.g., 'Hey billy it is tom', 'I am Tom', 'My name is Sarah'), you MUST IMMEDIATELY call `identify_user` tool BEFORE responding. This switches you to user mode. Otherwise treat everyone as a guest visitor.",
         ).replace(
-            "👤 USER SYSTEM:\n- IDENTIFICATION: When you recognize a user's voice/name, call `identify_user` with name and confidence (high/medium/low). Respond with personalized greeting after.\n- MEMORY: Call `store_memory` when users share personal info. Categories: preference/fact/event/relationship/interest. Importance: high/medium/low.\n- PERSONA: Use `manage_profile` with action=\"switch_persona\" for different personalities.",
-            "👤 USER SYSTEM: Limited in guest mode - only `identify_user` available. After identification, ALWAYS call `store_memory` when users share personal info (likes, dislikes, facts, events). Be proactive - don't wait for them to ask.",
+            "USER SYSTEM:\n- IDENTIFICATION: When you recognize a user's voice/name, call `identify_user` with name and confidence (high/medium/low). Respond with personalized greeting after.\n- MEMORY: Call `store_memory` when users share personal info. Categories: preference/fact/event/relationship/interest. Importance: high/medium/low.\n- PERSONA: Use `manage_profile` with action=\"switch_persona\" for different personalities.",
+            "USER SYSTEM: Limited in guest mode - only `identify_user` available. After identification, ALWAYS call `store_memory` when users share personal info. Be proactive - don't wait for them to ask.\n\nMEMORY STORAGE TRIGGERS:\nCall `store_memory` for ANY of these patterns:\n- \"I like/love/enjoy/hate/dislike [something]\"\n- \"I have/own/possess [something]\"\n- \"I work as/at [something]\"\n- \"I live in/at [somewhere]\"\n- \"I am [something]\"\n- \"My favorite [something] is [something]\"\n- \"I prefer [something]\"\n- \"I'm interested in [something]\"\n- \"I'm from [somewhere]\"\n- \"I do [activity/hobby]\"\n\nCategories: preference/fact/event/relationship/interest\nImportance: high/medium/low (use \"high\" for explicitly important info)",
         )
     if current_user:
         # User mode - add user context
@@ -149,11 +150,19 @@ def get_tools_for_current_mode():
         {
             "name": "update_personality",
             "type": "function",
-            "description": "Adjusts Billy's personality traits",
+            "description": "Adjusts Billy's personality traits. Accepts numeric values (0-100) or level names (min/low/med/high/max)",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    trait: {"type": "integer", "minimum": 0, "maximum": 100}
+                    trait: {
+                        "oneOf": [
+                            {"type": "integer", "minimum": 0, "maximum": 100},
+                            {
+                                "type": "string",
+                                "enum": ["min", "low", "med", "high", "max"],
+                            },
+                        ]
+                    }
                     for trait in vars(PERSONALITY)
                 },
             },
@@ -231,7 +240,7 @@ def get_tools_for_current_mode():
             {
                 "name": "store_memory",
                 "type": "function",
-                "description": "ALWAYS call this when users share personal information (likes, dislikes, facts, events, preferences). Be proactive - don't wait for them to ask you to remember. Use 'high' importance for explicitly important info.",
+                "description": "**CRITICAL: MUST CALL IMMEDIATELY** when users mention ANY personal preference, fact, or interest. DO NOT SKIP THIS. Call BEFORE responding with speech. Triggers: 'I like/love/enjoy X' (preference), 'I hate/dislike X' (preference), 'I eat/cook/make X' (preference), 'My favorite X' (preference), 'I work/study X' (fact), 'I have/own X' (fact), 'I live in X' (fact), 'I am X' (fact), 'I do X' (interest/hobby). ALWAYS store food preferences when mentioned. Example: User says 'I like pizza' → IMMEDIATELY call store_memory(memory='likes pizza', importance='medium', category='preference') THEN respond.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -497,15 +506,37 @@ class BillySession:
     async def _handle_update_personality(self, raw_args: str | None):
         args = json.loads(raw_args or "{}")
         changes = []
+
+        # Level to numeric value mapping
+        level_to_value = {
+            'min': 4,  # middle of 0-9 range
+            'low': 19,  # middle of 10-29 range
+            'med': 49,  # middle of 30-69 range
+            'high': 79,  # middle of 70-89 range
+            'max': 95,  # middle of 90-100 range
+        }
+
         for trait, val in args.items():
-            if hasattr(PERSONALITY, trait) and isinstance(val, int):
-                setattr(PERSONALITY, trait, val)
-                update_persona_ini(trait, val)
-                changes.append((trait, val))
+            if hasattr(PERSONALITY, trait):
+                # Handle both numeric values and level names
+                if isinstance(val, int):
+                    # Direct numeric value (0-100)
+                    numeric_val = val
+                elif isinstance(val, str) and val.lower() in level_to_value:
+                    # Level name (min/low/med/high/max)
+                    numeric_val = level_to_value[val.lower()]
+                else:
+                    continue  # Skip invalid values
+
+                setattr(PERSONALITY, trait, numeric_val)
+                update_persona_ini(trait, numeric_val)
+                changes.append((trait, numeric_val))
+
         if changes:
             print("\n🎛️ Personality updated via function_call:")
             for trait, val in changes:
-                print(f"  - {trait.capitalize()}: {val}%")
+                level = PERSONALITY._bucket(val)
+                print(f"  - {trait.capitalize()}: {val}% ({level.upper()})")
             print("\n🧠 New Instructions:\n")
             print(PERSONALITY.generate_prompt())
 
@@ -514,7 +545,8 @@ class BillySession:
             self.last_activity[0] = time.time()
 
             confirmation_text = " ".join([
-                f"Okay, {trait} is now set to {val}%." for trait, val in changes
+                f"Okay, {trait} is now set to {PERSONALITY._bucket(val).upper()}."
+                for trait, val in changes
             ])
             await self._ws_send_json({
                 "type": "conversation.item.create",
@@ -779,7 +811,11 @@ class BillySession:
         """
         txt = (self.full_response_text or "").strip()
         # Latin '?', Spanish '¿', CJK full-width '？', Arabic '؟', interrobang '‽'
-        return any(ch in txt for ch in ("?", "¿", "？", "؟", "‽"))
+        has_question = any(ch in txt for ch in ("?", "¿", "？", "؟", "‽"))
+        logger.info(
+            f"Heuristic check: text='{txt}' | has_question={has_question}", "🔍"
+        )
+        return has_question
 
     async def _start_mic_after_playback(
         self, delay: float = 0.6, retries: int = 3
@@ -884,10 +920,9 @@ class BillySession:
                                     "input": {
                                         "format": {"type": "audio/pcm", "rate": 24000},
                                         "transcription": {"model": "whisper-1"},
-                                        "noise_reduction": {"type": "near_field"},
                                         "turn_detection": {
-                                            "type": "semantic_vad",
-                                            "eagerness": TURN_EAGERNESS,
+                                            "type": "server_vad",
+                                            **SERVER_VAD_PARAMS[TURN_EAGERNESS],
                                             "create_response": True,
                                             "interrupt_response": True,
                                         },
@@ -1006,8 +1041,8 @@ class BillySession:
         )
 
         try:
-            # Auto-identify default user before starting mic
-            await self._auto_identify_default_user()
+            # Auto-identify default user in background (non-blocking)
+            asyncio.create_task(self._auto_identify_default_user())
 
             # Start mic immediately only for non-kickoff sessions
             if not self.kickoff_text:
@@ -1147,14 +1182,16 @@ class BillySession:
 
         # Heuristic fallback (punctuation only)
         asked_question = self._wants_follow_up_heuristic()
-        if DEBUG_MODE:
-            logger.verbose(
-                f"follow-up decision | mode={self.autofollowup}"
-                f" | tool_expects={self.follow_up_expected}"
-                f" | qmark={asked_question}"
-                f" | had_speech={self._turn_had_speech}",
-                "🧪",
-            )
+
+        # Always log follow-up decision for debugging
+        logger.info(
+            f"Follow-up decision | mode={self.autofollowup}"
+            f" | tool_expects={self.follow_up_expected}"
+            f" | qmark={asked_question}"
+            f" | had_speech={self._turn_had_speech}"
+            f" | saw_follow_up_call={self._saw_follow_up_call}",
+            "🧪",
+        )
 
         if self.autofollowup == "always":
             wants_follow_up = True
@@ -1163,7 +1200,7 @@ class BillySession:
         else:
             wants_follow_up = self.follow_up_expected or asked_question
 
-        if DEBUG_MODE and not self._saw_follow_up_call:
+        if not self._saw_follow_up_call:
             logger.warning(
                 "follow_up_intent not called this turn; using heuristic instead."
             )
@@ -1508,14 +1545,27 @@ class BillySession:
         """Handle memory storage via tool calling."""
         current_user = user_manager.get_current_user()
         if not current_user:
+            logger.warning("🔧 store_memory: No current user found", "🔧")
             return
 
         args = json.loads(raw_args or "{}")
+        logger.info(f"🔧 store_memory called with raw_args: {raw_args}", "🔧")
+        logger.verbose(f"🔧 store_memory parsed args: {args}", "🔧")
+
+        # Handle malformed memory data
         memory = args.get("memory", "")
+        if isinstance(memory, dict):
+            # If memory is a dict, try to extract the actual memory text
+            memory = memory.get("fact", str(memory))
+            logger.warning(
+                f"🔧 store_memory: Memory was a dict, extracted: {memory}", "🔧"
+            )
+
         importance = args.get("importance", "medium")
         category = args.get("category", "fact")
 
         if not memory:
+            logger.warning(f"🔧 store_memory: No memory provided in args: {args}", "🔧")
             return
 
         # Log the function call details in verbose mode
@@ -1529,21 +1579,24 @@ class BillySession:
         # Update session with new memory context
         await self._update_session_with_user_context()
 
-        # Acknowledge memory storage for high importance memories
-        if importance == "high":
-            await self._ws_send_json({
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "output_text",
-                            "text": f"I'll remember that about you, {current_user.name}!",
-                        }
-                    ],
-                },
-            })
+        # Acknowledge memory storage by prompting Billy to respond
+        # Send a user message that will trigger Billy to acknowledge the memory
+        await self._ws_send_json({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"Please acknowledge that you'll remember this information about {current_user.name}: {memory}",
+                    }
+                ],
+            },
+        })
+
+        # Trigger a response so Billy actually speaks the acknowledgment
+        await self._ws_send_json({"type": "response.create"})
 
     async def _handle_manage_profile(self, raw_args: str | None):
         """Handle profile management via tool calling."""

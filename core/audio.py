@@ -253,12 +253,25 @@ def handle_incoming_audio_chunk(audio_b64, buffer):
 
 
 def send_mic_audio(ws, samples, loop):
-    pcm = (
-        resample(samples, int(len(samples) * 24000 / MIC_RATE))
-        .astype(np.int16)
-        .tobytes()
-    )
     try:
+        # Ensure samples is a proper numpy array
+        if not isinstance(samples, np.ndarray):
+            samples = np.array(samples)
+
+        # Ensure samples is 1D
+        if samples.ndim > 1:
+            samples = samples.flatten()
+
+        # Check if samples is empty
+        if len(samples) == 0:
+            return
+
+        pcm = (
+            resample(samples, int(len(samples) * 24000 / MIC_RATE))
+            .astype(np.int16)
+            .tobytes()
+        )
+
         future = asyncio.run_coroutine_threadsafe(
             ws.send(
                 json.dumps({
@@ -269,10 +282,13 @@ def send_mic_audio(ws, samples, loop):
             loop,
         )
 
-        # Await the result; avoid race conditions.
-        future.result()
+        # Don't block on websocket send - let it complete asynchronously
+        # This significantly improves audio response latency
     except Exception as e:
         logger.error(f"Failed to send audio chunk: {e}")
+        logger.error(
+            f"Samples type: {type(samples)}, shape: {getattr(samples, 'shape', 'no shape')}"
+        )
 
 
 def enqueue_wav_to_playback(filepath):

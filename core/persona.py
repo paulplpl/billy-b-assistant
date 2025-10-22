@@ -115,15 +115,15 @@ class PersonaProfile:
             "formality",
         ]
         lines = [
-            "YOUR BEHAVIOR IS GOVERNED BY PERSONALITY TRAITS, EACH BETWEEN 0% AND 100%.",
-            "LOWER VALUES MEAN THE TRAIT IS MUTED. HIGHER VALUES MEAN THE TRAIT IS EXAGGERATED.",
+            "YOUR BEHAVIOR IS GOVERNED BY PERSONALITY TRAITS WITH FIVE LEVELS: MIN, LOW, MED, HIGH, MAX.",
+            "MIN = TRAIT IS MUTED. MAX = TRAIT IS EXAGGERATED.",
             "THESE TRAITS GUIDE YOUR BEHAVIORAL EXPRESSION. FOLLOW THESE RULES STRICTLY:",
         ]
         for trait in order:
             val = getattr(self, trait)
             bucket = self._bucket(val)
             rule = self.TRAIT_RULES[trait][bucket].upper()
-            lines.append(f"- {trait.upper()} ({val}% → {bucket.upper()}): {rule}")
+            lines.append(f"- {trait.upper()} ({bucket.upper()}): {rule}")
 
         return "\n".join(lines)
 

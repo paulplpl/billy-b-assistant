@@ -135,7 +135,7 @@ def get_current_user():
     try:
         # Import here to avoid circular imports
         from core.config import DEFAULT_USER
-        from core.user_profiles import user_manager
+        from core.profile_manager import user_manager
 
         current_user = user_manager.get_current_user()
 
@@ -172,7 +172,7 @@ def set_current_user():
             return jsonify({"error": "User name is required"}), 400
 
         # Import here to avoid circular imports
-        from core.user_profiles import user_manager
+        from core.profile_manager import user_manager
 
         # Identify the user (this will load or create the profile)
         profile = user_manager.identify_user(user_name, "high")
@@ -193,7 +193,7 @@ def clear_current_user():
     """Clear the current user profile (switch to guest mode)."""
     try:
         # Import here to avoid circular imports
-        from core.user_profiles import user_manager
+        from core.profile_manager import user_manager
 
         user_manager.clear_current_user()
         return jsonify({"message": "Current user cleared, switched to guest mode"})
@@ -210,7 +210,7 @@ def update_current_user():
         action = data.get("action")
 
         # Import here to avoid circular imports
-        from core.user_profiles import user_manager
+        from core.profile_manager import user_manager
 
         current_user = user_manager.get_current_user()
         if not current_user:

@@ -7,9 +7,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(LogPanel.fetchLogs, 5000);
     setInterval(ServiceStatus.fetchStatus, 10000);
 
-    AudioPanel.updateDeviceLabels();
+    if (typeof AudioPanel !== 'undefined') {
+        AudioPanel.updateDeviceLabels();
+        AudioPanel.loadMicGain();
+    }
     PersonaForm.loadPersona();
-    AudioPanel.loadMicGain();
     SettingsForm.handleSettingsSave();
     SettingsForm.saveDropdownSelections();
     SettingsForm.populateDropdowns(cfg);
