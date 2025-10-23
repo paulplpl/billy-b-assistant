@@ -231,11 +231,13 @@ const LogPanel = (() => {
     const toggleMotion = () => {
         const btn = elements.toggleMotionBtn;
         const icon = btn.querySelector(".material-icons");
+        const statusText = document.getElementById("motion-status-text");
         btn.classList.toggle("bg-zinc-700");
         document.documentElement.classList.toggle("reduce-motion");
         const isReduced = document.documentElement.classList.contains("reduce-motion");
         localStorage.setItem("reduceMotion", isReduced ? "1" : "0");
         if (icon) icon.textContent = isReduced ? "blur_off" : "blur_on";
+        if (statusText) statusText.textContent = isReduced ? "Disabled" : "Enabled";
     };
 
     const toggleFullscreenLog = () => {
@@ -370,8 +372,10 @@ const LogPanel = (() => {
             document.documentElement.classList.add("reduce-motion");
             const btn = elements.toggleMotionBtn;
             const icon = btn.querySelector(".material-icons");
+            const statusText = document.getElementById("motion-status-text");
             btn.classList.remove("bg-zinc-700");
             if (icon) icon.textContent = "blur_off";
+            if (statusText) statusText.textContent = "Disabled";
         }
 
         // Handle password change modal and button visibility

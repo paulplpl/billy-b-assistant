@@ -1,13 +1,12 @@
 <!-- Settings Form -->
 <section>
-    <form id="config-form" class="p-4">
-
+    <form id="config-form" class="px-6">
         <!-- Software Settings -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-software">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
                 <span class="material-icons text-white">settings</span>
-                Software Settings
+                General Settings
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
             </h3>
 
@@ -569,9 +568,36 @@
                 </select>
             </div>
         </div>
+
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
+             id="section-ui-settings">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">palette</span>
+                UI Settings
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+
+            <div class="mb-4">
+                <div class="flex items-center justify-between p-3">
+                    <div class="flex items-center gap-3">
+                        <div>
+                            <div class="text-white font-medium text-sm">UI Animations & Effects</div>
+                            <div class="text-xs text-zinc-400">Enable or disable interface animations, transitions and effects</div>
+                        </div>
+                    </div>
+                    <button id="toggle-motion-btn"
+                            type="button"
+                            class="bg-zinc-700 hover:bg-zinc-600 transition-all text-white text-sm py-2 px-4 rounded flex gap-2 items-center cursor-pointer"
+                            title="Toggle UI animations">
+                        <span class="material-icons">blur_on</span>
+                        <span id="motion-status-text">Enabled</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </form>
 
-    <div class="sticky bottom-0 z-10 p-4">
+    <div class="sticky bottom-0 z-10 p-4 backdrop-blur-md">
         <div class="flex justify-center">
             <div class="relative inline-block">
                 <!-- Split button -->

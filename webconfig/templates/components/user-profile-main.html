@@ -1,0 +1,87 @@
+<!-- User Profile Column (consistent with Persona) -->
+<section class="space-y-4 md:space-y-6">
+    <form id="profile-form" class="p-4">
+        <!-- Profile Selector -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4">
+            <h3 class="text-lg font-bold mb-4 text-slate-200 flex items-center">
+                <span class="material-icons mr-2 text-emerald-400">person</span>
+                User Profiles
+            </h3>
+            <div id="profile-list-main" class="space-y-1">
+                <!-- Profile list will be populated here -->
+            </div>
+        </div>
+
+        <!-- Stats Section (Collapsible) -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
+             id="section-stats-main">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">analytics</span>
+                Stats
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+
+            <div id="stats-content-main" class="space-y-2">
+                <p class="text-sm text-zinc-400 italic">Loading stats...</p>
+            </div>
+        </div>
+
+        <!-- Memories Section (Collapsible) -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
+             id="section-memories-main">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">psychology</span>
+                Memories
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+
+            <div id="memories-list-main" class="space-y-2 max-h-32 overflow-y-auto">
+                <p class="text-sm text-zinc-400 italic">No memories yet</p>
+            </div>
+        </div>
+
+        <!-- Profile Settings (Collapsible) -->
+        <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
+             id="section-profile-settings-main">
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
+                <span class="material-icons text-white">manage_accounts</span>
+                Profile Settings
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            </h3>
+
+            <div class="space-y-6">
+                <!-- Display Name -->
+                <div>
+                    <h4 class="text-sm font-medium text-zinc-300 mb-3">Display Name</h4>
+                    <div>
+                        <input type="text" id="display-name-input-main" class="w-full bg-zinc-800 text-white rounded px-3 py-2 border border-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500" placeholder="Enter display name">
+                        <p class="text-xs text-zinc-400 mt-1">Display name shown in the user interface</p>
+                    </div>
+                </div>
+
+                <!-- Persona Selection -->
+                <div>
+                    <h4 class="text-sm font-medium text-zinc-300 mb-3">Preferred Persona</h4>
+                    <div>
+                        <select id="persona-select-main" class="w-full bg-zinc-800 text-white rounded px-3 py-2 border border-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- Sticky Actions (matches persona column) -->
+    <div class="sticky bottom-0 z-10 p-4">
+        <div class="flex justify-center">
+            <div class="relative inline-block">
+                <button id="update-persona-btn-main" class="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-800 font-semibold py-2 px-4 flex items-center justify-center gap-1 focus:outline-none transition-colors hidden" disabled>
+                    <span class="material-icons text-sm">save</span>
+                    Save Profile
+                </button>
+            </div>
+        </div>
+
+    </div>
+</section>

@@ -15,7 +15,7 @@ class UserProfilePanel {
     }
 
     bindUI() {
-        this.panel = document.getElementById('user-profile-panel');
+        this.panel = document.getElementById('settings-panel');
         if (!this.panel) return;
 
         // User profile button click handler
@@ -117,11 +117,18 @@ class UserProfilePanel {
                 this.defaultUser = data.DEFAULT_USER || 'guest';
                 this.updateProfileList();
                 
-        // Load memories for current user
+        // Load stats and memories for current user
+        await this.loadStats();
         await this.loadMemories();
         
         // Update profile settings visibility based on current user
         this.updateProfileSettingsVisibility();
+        
+        // Update display name field visibility
+        this.updateDisplayNameVisibility();
+        
+        // Hide save button initially
+        this.disableSaveButton();
         
         // Update current user display in header
         this.updateCurrentUserDisplay();
@@ -233,9 +240,108 @@ class UserProfilePanel {
         }
     }
 
+    updateProfileListFormat() {
+        const profileList = document.getElementById('profile-list-main');
+        if (!profileList) return;
+
+        const currentUser = this.currentUser || 'guest';
+        const currentDefault = this.defaultUser || 'guest';
+        
+        console.log('updateProfileListFormat - currentUser:', currentUser, 'currentDefault:', currentDefault);
+
+        profileList.innerHTML = '';
+
+        // Add Guest profile first
+        const guestRow = document.createElement('div');
+        const isGuestActive = currentUser === 'guest' || currentUser === null;
+        const isGuestDefault = currentDefault === 'guest';
+        
+        guestRow.className = 'flex items-center justify-between p-3 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors cursor-pointer border border-zinc-700';
+        guestRow.setAttribute('data-profile', 'guest');
+        
+        if (isGuestActive) {
+            guestRow.classList.remove('border-zinc-700');
+            guestRow.classList.add('border-emerald-500', 'bg-emerald-900/20');
+        }
+        
+        guestRow.innerHTML = `
+            <div class="flex items-center space-x-3">
+                <button class="${isGuestDefault ? 'text-amber-400' : 'text-zinc-500'} hover:text-amber-300 p-1 rounded transition-colors" 
+                        onclick="event.stopPropagation(); window.UserProfilePanel.setAsDefault('guest')" 
+                        title="Set as default">
+                    <span class="material-icons text-base">${isGuestDefault ? 'star' : 'star_border'}</span>
+                </button>
+                <span class="material-icons ${isGuestActive ? 'text-emerald-400' : 'text-zinc-400'}">person_outline</span>
+                <div>
+                    <div class="text-white font-medium">Guest</div>
+                    <div class="text-xs text-zinc-400">guest • ${isGuestDefault ? 'Default' : 'Anonymous'}</div>
+                </div>
+            </div>
+        `;
+        
+        guestRow.addEventListener('click', () => this.setAsGuest());
+        profileList.appendChild(guestRow);
+
+        // Add user profiles
+        this.profiles.forEach(profile => {
+            const profileName = typeof profile === 'string' ? profile : profile.name;
+            const isCurrent = profileName === currentUser;
+            const isDefault = profileName === currentDefault;
+            const displayName = this.getDisplayName(profileName, profile);
+            
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between p-3 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors cursor-pointer border border-zinc-700';
+            row.setAttribute('data-profile', profileName);
+            
+            if (isCurrent) {
+                row.classList.remove('border-zinc-700');
+                row.classList.add('border-emerald-500', 'bg-emerald-900/20');
+            }
+            
+            row.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <button class="${isDefault ? 'text-amber-400' : 'text-zinc-500'} hover:text-amber-300 p-1 rounded transition-colors" 
+                            onclick="event.stopPropagation(); window.UserProfilePanel.setAsDefault('${profileName}')" 
+                            title="Set as default">
+                        <span class="material-icons text-base">${isDefault ? 'star' : 'star_border'}</span>
+                    </button>
+                    <span class="material-icons ${isCurrent ? 'text-emerald-400' : 'text-zinc-400'}">person</span>
+                    <div>
+                        <div class="text-white font-medium">${displayName}</div>
+                        <div class="text-xs text-zinc-400">${profileName} • ${isDefault ? 'Default' : 'User'}</div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button class="text-zinc-500 hover:text-amber-300 p-1 rounded transition-colors" 
+                            onclick="event.stopPropagation(); window.UserProfilePanel.editProfile('${profileName}')" 
+                            title="Rename profile">
+                        <span class="material-icons text-sm">edit</span>
+                    </button>
+                    <button class="text-zinc-500 hover:text-rose-400 p-1 rounded transition-colors" 
+                            onclick="event.stopPropagation(); window.UserProfilePanel.deleteProfile('${profileName}')" 
+                            title="Delete profile">
+                        <span class="material-icons text-sm">delete</span>
+                    </button>
+                </div>
+            `;
+            
+            row.addEventListener('click', () => this.setAsCurrentUser(profileName));
+            profileList.appendChild(row);
+        });
+    }
+
     updateProfileList() {
-        const profileTiles = document.getElementById('profile-tiles');
+        // Try both the old modal ID and new main column ID
+        const profileTiles = document.getElementById('profile-tiles') || document.getElementById('profile-list-main');
         if (!profileTiles) return;
+        
+        // Check if we're using the list format (new main column) or tiles format (old modal)
+        const isListFormat = profileTiles.id === 'profile-list-main';
+        
+        if (isListFormat) {
+            this.updateProfileListFormat();
+            return;
+        }
 
         // Note: Loading states are now cleared manually after success notifications
         // This ensures the loading spinner stays visible until the operation is complete
@@ -334,11 +440,18 @@ class UserProfilePanel {
 
     updatePersonaSelect() {
         const personaSelect = document.getElementById('persona-select');
-        if (!personaSelect) return;
-
-        personaSelect.innerHTML = this.personas.map(persona => `
+        const personaSelectMain = document.getElementById('persona-select-main');
+        
+        const optionsHTML = this.personas.map(persona => `
             <option value="${persona.id}">${persona.name}</option>
         `).join('');
+
+        if (personaSelect) {
+            personaSelect.innerHTML = optionsHTML;
+        }
+        if (personaSelectMain) {
+            personaSelectMain.innerHTML = optionsHTML;
+        }
 
         // Set current user's preferred persona if available
         if (this.currentUser) {
@@ -357,8 +470,13 @@ class UserProfilePanel {
                     const preferredPersona = currentUserData.data?.USER_INFO?.preferred_persona || 'default';
                     
                     const personaSelect = document.getElementById('persona-select');
+                    const personaSelectMain = document.getElementById('persona-select-main');
+                    
                     if (personaSelect) {
                         personaSelect.value = preferredPersona;
+                    }
+                    if (personaSelectMain) {
+                        personaSelectMain.value = preferredPersona;
                     }
                 }
             }
@@ -367,10 +485,95 @@ class UserProfilePanel {
         }
     }
 
+    updateDisplayNameVisibility() {
+        const displayNameSection = document.querySelector('#display-name-input-main')?.closest('div').parentElement;
+        const personaSection = document.querySelector('#persona-select-main')?.closest('div').parentElement;
+        
+        if (!displayNameSection || !personaSection) return;
+
+        const isGuest = this.currentUser === 'guest' || this.currentUser === null;
+        
+        if (isGuest) {
+            displayNameSection.style.display = 'none';
+            personaSection.style.display = 'none';
+        } else {
+            displayNameSection.style.display = 'block';
+            personaSection.style.display = 'block';
+        }
+    }
+
+    async loadStats() {
+        try {
+            const data = await ConfigService.fetchConfig();
+            const statsContent = document.getElementById('stats-content') || document.getElementById('stats-content-main');
+            if (!statsContent) return;
+
+            // Don't load stats for guest mode
+            if (this.currentUser === 'guest' || this.currentUser === null) {
+                statsContent.innerHTML = '<p class="text-sm text-zinc-400 italic">No stats in guest mode</p>';
+                return;
+            }
+
+            // Get user info for interaction count and dates
+            const userInfo = data?.CURRENT_USER?.data?.USER_INFO || {};
+            const interactionCount = parseInt(userInfo.interaction_count || '0');
+            const createdDate = userInfo.created_date;
+            const lastSeen = userInfo.last_seen;
+
+            // Format dates with time
+            const formatDateTime = (dateString) => {
+                if (!dateString) return 'Unknown';
+                try {
+                    const date = new Date(dateString);
+                    return date.toLocaleString('en-US', { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                } catch (e) {
+                    return 'Unknown';
+                }
+            };
+
+            // Create stats content
+            const statsHTML = `
+                <div class="p-3 bg-zinc-800/50 rounded-lg border border-zinc-600">
+                    <div class="space-y-3 text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="material-icons text-cyan-400 text-sm">chat</span>
+                            <span class="text-zinc-300">Interactions:</span>
+                            <span class="text-white font-medium">${interactionCount}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="material-icons text-emerald-400 text-sm">person_add</span>
+                            <span class="text-zinc-300">First met:</span>
+                            <span class="text-white font-medium">${formatDateTime(createdDate)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="material-icons text-amber-400 text-sm">schedule</span>
+                            <span class="text-zinc-300">Last seen:</span>
+                            <span class="text-white font-medium">${formatDateTime(lastSeen)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            statsContent.innerHTML = statsHTML;
+        } catch (error) {
+            console.error('Failed to load stats:', error);
+            const statsContent = document.getElementById('stats-content') || document.getElementById('stats-content-main');
+            if (statsContent) {
+                statsContent.innerHTML = '<p class="text-sm text-zinc-400 italic">Error loading stats</p>';
+            }
+        }
+    }
+
     async loadMemories() {
         try {
             const data = await ConfigService.fetchConfig();
-            const memoriesList = document.getElementById('memories-list');
+            const memoriesList = document.getElementById('memories-list') || document.getElementById('memories-list-main');
             if (!memoriesList) return;
 
             // Don't load memories for guest mode
@@ -385,7 +588,7 @@ class UserProfilePanel {
                     // Show recent memories (last 5)
                     const recentMemories = memories.slice(-5).reverse();
                     memoriesList.innerHTML = recentMemories.map(memory => `
-                        <div class="flex items-start justify-between p-2 bg-zinc-800 rounded-lg">
+                        <div class="flex items-center justify-between py-2 px-3 bg-zinc-800 rounded-lg">
                             <div class="flex-1">
                                 <p class="text-sm text-zinc-200">${memory.memory}</p>
                                 <div class="flex items-center gap-2 mt-1">
@@ -396,7 +599,7 @@ class UserProfilePanel {
                                     <span class="text-xs text-zinc-400">${new Date(memory.date).toLocaleDateString()}</span>
                                 </div>
                             </div>
-                            <button class="ml-2 text-rose-400 hover:text-rose-300 transition-colors" onclick="window.UserProfilePanel.deleteMemory('${memory.date}')" title="Delete memory">
+                            <button class="ml-2 text-zinc-500 hover:text-rose-400 transition-colors" onclick="window.UserProfilePanel.deleteMemory('${memory.date}')" title="Delete memory">
                                 <span class="material-icons text-sm">delete</span>
                             </button>
                         </div>
@@ -409,7 +612,7 @@ class UserProfilePanel {
             }
         } catch (error) {
             console.error('Failed to load memories:', error);
-            const memoriesList = document.getElementById('memories-list');
+            const memoriesList = document.getElementById('memories-list') || document.getElementById('memories-list-main');
             if (memoriesList) {
                 memoriesList.innerHTML = '<p class="text-sm text-zinc-400 italic">Error loading memories</p>';
             }
@@ -492,8 +695,13 @@ class UserProfilePanel {
     // Bind display name management
     bindDisplayNameManagement() {
         const displayNameInput = document.getElementById('display-name-input');
+        const displayNameInputMain = document.getElementById('display-name-input-main');
+        
         if (displayNameInput) {
             displayNameInput.addEventListener('input', () => this.onDisplayNameChange());
+        }
+        if (displayNameInputMain) {
+            displayNameInputMain.addEventListener('input', () => this.onDisplayNameChange());
         }
     }
 
@@ -501,39 +709,60 @@ class UserProfilePanel {
     async loadDisplayName() {
         try {
             const displayNameInput = document.getElementById('display-name-input');
-            if (!displayNameInput) return;
+            const displayNameInputMain = document.getElementById('display-name-input-main');
 
             // Don't load display name for guest mode
             if (this.currentUser === 'guest' || this.currentUser === null) {
-                displayNameInput.value = '';
-                displayNameInput.disabled = true;
-                displayNameInput.placeholder = 'No display name in guest mode';
+                if (displayNameInput) {
+                    displayNameInput.value = '';
+                    displayNameInput.disabled = true;
+                    displayNameInput.placeholder = 'No display name in guest mode';
+                }
+                if (displayNameInputMain) {
+                    displayNameInputMain.value = '';
+                    displayNameInputMain.disabled = true;
+                    displayNameInputMain.placeholder = 'No display name in guest mode';
+                }
                 return;
             }
 
-            displayNameInput.disabled = false;
-            displayNameInput.placeholder = 'Enter display name';
+            if (displayNameInput) {
+                displayNameInput.disabled = false;
+                displayNameInput.placeholder = 'Enter display name';
+            }
+            if (displayNameInputMain) {
+                displayNameInputMain.disabled = false;
+                displayNameInputMain.placeholder = 'Enter display name';
+            }
 
             // Use pending display name if it exists, otherwise load from server
+            let displayNameValue;
             if (this.pendingDisplayName !== null) {
-                displayNameInput.value = this.pendingDisplayName;
+                displayNameValue = this.pendingDisplayName;
             } else {
                 // Load from server
                 const data = await ConfigService.fetchConfig();
                 if (data && data.CURRENT_USER && data.CURRENT_USER.data && data.CURRENT_USER.data.USER_INFO && data.CURRENT_USER.data.USER_INFO.display_name) {
-                    const displayName = data.CURRENT_USER.data.USER_INFO.display_name;
-                    displayNameInput.value = displayName;
+                    displayNameValue = data.CURRENT_USER.data.USER_INFO.display_name;
                 } else {
                     // Fallback to user name if no display name set
-                    displayNameInput.value = this.currentUser;
+                    displayNameValue = this.currentUser;
                 }
             }
+            
+            if (displayNameInput) displayNameInput.value = displayNameValue;
+            if (displayNameInputMain) displayNameInputMain.value = displayNameValue;
         } catch (error) {
             console.error('Failed to load display name:', error);
             const displayNameInput = document.getElementById('display-name-input');
+            const displayNameInputMain = document.getElementById('display-name-input-main');
             if (displayNameInput) {
                 displayNameInput.value = '';
                 displayNameInput.placeholder = 'Error loading display name';
+            }
+            if (displayNameInputMain) {
+                displayNameInputMain.value = '';
+                displayNameInputMain.placeholder = 'Error loading display name';
             }
         }
     }
@@ -545,9 +774,18 @@ class UserProfilePanel {
         }
 
         const displayNameInput = document.getElementById('display-name-input');
-        if (!displayNameInput) return;
-
-        const newDisplayName = displayNameInput.value.trim();
+        const displayNameInputMain = document.getElementById('display-name-input-main');
+        
+        // Get value from whichever input triggered the change
+        const newDisplayName = (displayNameInputMain?.value || displayNameInput?.value || '').trim();
+        
+        // Sync both inputs
+        if (displayNameInput && displayNameInput.value !== newDisplayName) {
+            displayNameInput.value = newDisplayName;
+        }
+        if (displayNameInputMain && displayNameInputMain.value !== newDisplayName) {
+            displayNameInputMain.value = newDisplayName;
+        }
         
         // Store pending display name
         this.pendingDisplayName = newDisplayName;
@@ -605,6 +843,9 @@ class UserProfilePanel {
                 // Force update the profile list to show active state
                 this.updateProfileList();
                 
+                // Update display name field visibility
+                this.updateDisplayNameVisibility();
+                
                  // Load the user's preferred persona in the persona form (non-blocking)
                  this.loadUserPreferredPersona(profileName);
                 
@@ -654,6 +895,9 @@ class UserProfilePanel {
                 
                 // Force update the profile list to show active state
                 this.updateProfileList();
+                
+                // Update display name field visibility
+                this.updateDisplayNameVisibility();
                 
                  // Load the default persona for guest mode (non-blocking)
                  this.loadUserPreferredPersona('guest');
@@ -863,8 +1107,25 @@ class UserProfilePanel {
 
     enableSaveButton() {
         const updateBtn = document.getElementById('update-persona-btn');
+        const updateBtnMain = document.getElementById('update-persona-btn-main');
         if (updateBtn) {
             updateBtn.disabled = false;
+        }
+        if (updateBtnMain) {
+            updateBtnMain.disabled = false;
+            updateBtnMain.classList.remove('hidden');
+        }
+    }
+
+    disableSaveButton() {
+        const updateBtn = document.getElementById('update-persona-btn');
+        const updateBtnMain = document.getElementById('update-persona-btn-main');
+        if (updateBtn) {
+            updateBtn.disabled = true;
+        }
+        if (updateBtnMain) {
+            updateBtnMain.disabled = true;
+            updateBtnMain.classList.add('hidden');
         }
     }
 
@@ -1132,4 +1393,78 @@ window.deleteMemory = (memoryDate) => {
 window.editProfile = (profileName) => {
     window.UserProfilePanel.editProfile(profileName);
 };
+
+// Settings toggle functionality
+document.addEventListener('DOMContentLoaded', () => {
+    const settingsToggle = document.getElementById('settings-toggle');
+    const settingsContent = document.getElementById('settings-content');
+    const settingsChevron = document.getElementById('settings-chevron');
+    
+    if (settingsToggle && settingsContent && settingsChevron) {
+        settingsToggle.addEventListener('click', () => {
+            const isHidden = settingsContent.classList.contains('hidden');
+            
+            if (isHidden) {
+                settingsContent.classList.remove('hidden');
+                settingsChevron.style.transform = 'rotate(180deg)';
+            } else {
+                settingsContent.classList.add('hidden');
+                settingsChevron.style.transform = 'rotate(0deg)';
+            }
+        });
+    }
+    
+    // Sync main column elements with modal
+    if (window.UserProfilePanel) {
+        // Sync display name input
+        const displayNameMain = document.getElementById('display-name-input-main');
+        const displayNameModal = document.getElementById('display-name-input');
+        
+        if (displayNameMain && displayNameModal) {
+            displayNameMain.addEventListener('input', (e) => {
+                displayNameModal.value = e.target.value;
+                window.UserProfilePanel.onDisplayNameChange();
+            });
+            displayNameModal.addEventListener('input', (e) => {
+                displayNameMain.value = e.target.value;
+            });
+        }
+        
+        // Sync persona select
+        const personaSelectMain = document.getElementById('persona-select-main');
+        const personaSelectModal = document.getElementById('persona-select');
+        
+        if (personaSelectMain && personaSelectModal) {
+            personaSelectMain.addEventListener('change', (e) => {
+                personaSelectModal.value = e.target.value;
+                window.UserProfilePanel.onPersonaSelectChange();
+            });
+            personaSelectModal.addEventListener('change', (e) => {
+                personaSelectMain.value = e.target.value;
+            });
+        }
+        
+        // Wire up main column buttons
+        const saveMainBtn = document.getElementById('update-persona-btn-main');
+        if (saveMainBtn) {
+            saveMainBtn.addEventListener('click', () => {
+                window.UserProfilePanel.updatePersona();
+            });
+        }
+        
+        const editMainBtn = document.getElementById('edit-profile-btn-main');
+        if (editMainBtn) {
+            editMainBtn.addEventListener('click', () => {
+                window.UserProfilePanel.editProfile(window.UserProfilePanel.currentUser);
+            });
+        }
+        
+        const deleteMainBtn = document.getElementById('delete-profile-btn-main');
+        if (deleteMainBtn) {
+            deleteMainBtn.addEventListener('click', () => {
+                window.UserProfilePanel.deleteProfile(window.UserProfilePanel.currentUser);
+            });
+        }
+    }
+});
 

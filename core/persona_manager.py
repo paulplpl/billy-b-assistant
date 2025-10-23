@@ -31,7 +31,7 @@ class PersonaManager:
                 config.read(default_persona_file)
                 personas.append({
                     "name": "default",
-                    "description": "Default Billy Personality",
+                    "description": "Default",
                 })
             except Exception as e:
                 logger.warning(f"Failed to load default persona: {e}")
@@ -68,7 +68,7 @@ class PersonaManager:
         return (
             sorted(personas, key=lambda x: x["name"])
             if personas
-            else [{"name": "default", "description": "Default Billy Personality"}]
+            else [{"name": "default", "description": "Default"}]
         )
 
     def load_persona(self, persona_name: str) -> Optional[dict[str, Any]]:

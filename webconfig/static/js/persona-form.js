@@ -508,13 +508,12 @@ const PersonaForm = (() => {
                         </div>
                         <div class="flex items-center space-x-2">
         ${!isDefault ? `
-          <button class="${isCurrentPersona || isPreferredPersona ? 'text-gray-400 cursor-not-allowed opacity-50' : 'text-rose-400 hover:text-rose-300'} p-1 rounded transition-colors" 
+          <button class="${isCurrentPersona || isPreferredPersona ? 'text-gray-400 cursor-not-allowed opacity-50' : 'text-zinc-500 hover:text-rose-400'} p-1 rounded transition-colors" 
                   onclick="event.stopPropagation(); ${isCurrentPersona || isPreferredPersona ? 'window.PersonaForm.showPreferredPersonaDeleteMessage()' : `window.PersonaForm.deletePersona('${persona.name}')`}" 
                   title="${isCurrentPersona || isPreferredPersona ? 'Cannot delete preferred persona' : 'Delete persona'}">
               <span class="material-icons text-sm">delete</span>
           </button>
       ` : ''}
-                            <span class="material-icons text-zinc-400 text-sm">chevron_right</span>
                         </div>
                     `;
                     
