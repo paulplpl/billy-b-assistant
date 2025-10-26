@@ -329,15 +329,17 @@ const LogPanel = (() => {
         };
 
 
-        elements.powerBtn?.addEventListener("click", (e) => {
-            e.stopPropagation();
-            elements.powerDropdown?.classList.toggle("hidden");
-        });
+        if (elements.powerBtn) {
+            elements.powerBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (elements.powerDropdown) elements.powerDropdown.classList.toggle("hidden");
+            });
+        }
 
         document.addEventListener("click", (e) => {
             const menu = document.getElementById("power-menu");
-            if (!menu?.contains(e.target)) {
-                elements.powerDropdown?.classList.add("hidden");
+            if (!menu || !menu.contains(e.target)) {
+                if (elements.powerDropdown) elements.powerDropdown.classList.add("hidden");
             }
         });
 
@@ -353,15 +355,15 @@ const LogPanel = (() => {
         
         // Log level control
         const applyLogLevelBtn = document.getElementById("apply-log-level-btn");
-        applyLogLevelBtn?.addEventListener("click", applyLogLevel);
+        if (applyLogLevelBtn) applyLogLevelBtn.addEventListener("click", applyLogLevel);
         
         // Set current log level in dropdown
         const logLevelSelect = document.getElementById("log-level-select");
         if (logLevelSelect && cfg.LOG_LEVEL) {
             logLevelSelect.value = cfg.LOG_LEVEL;
         }
-        elements.toggleReleaseBtn?.addEventListener("click", toggleReleasePanel);
-        elements.releaseClose?.addEventListener("click", () => {
+        if (elements.toggleReleaseBtn) elements.toggleReleaseBtn.addEventListener("click", toggleReleasePanel);
+        if (elements.releaseClose) elements.releaseClose.addEventListener("click", () => {
             isReleaseHidden = true;
             elements.releasePanel.classList.add("hidden");
             elements.toggleReleaseBtn.classList.remove("bg-emerald-500","hover:bg-emerald-400","text-black");

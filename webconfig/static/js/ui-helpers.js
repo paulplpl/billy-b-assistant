@@ -42,7 +42,7 @@ function toggleDropdown(btn) {
 
 function toggleTooltip(el) {
     el.classList.toggle("text-cyan-400")
-    const container = el.closest("label")?.parentElement;
+    const container = el.closest("label") && el.closest("label").parentElement;
     if (!container) return;
     const tooltip = container.querySelector("[data-tooltip]");
     if (tooltip) {

@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import time
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -209,7 +210,7 @@ def get_tools_for_current_mode():
         {
             "name": "identify_user",
             "type": "function",
-            "description": "Call this ONLY when someone explicitly introduces themselves by stating their own name (e.g., 'I am Tom', 'My name is Sarah', 'Hey billy it is tom'). Do NOT call this when someone greets you by name (like 'Hello Billy' or 'Hey Billy'). Only call when they are telling you their own name to switch from guest mode to user mode.",
+            "description": "Call this ONLY when someone explicitly introduces themselves by stating their own name (e.g., 'I am Tom', 'My name is Sarah', 'Hey billy it is tom'). Do NOT call this when someone greets you by name (like 'Hello Billy' or 'Hey Billy'). Only call when they are telling you their own name to switch from guest mode to user mode. IMPORTANT: If you're uncertain about the spelling of a name (e.g., 'Thom' vs 'Tom', 'Sarah' vs 'Sara'), set confidence to 'low' to trigger spelling confirmation.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -889,6 +890,13 @@ class BillySession:
         self.loop = asyncio.get_running_loop()
         logger.info("Session starting...", "⏱️")
 
+        # Debug VAD parameters
+        vad_params = SERVER_VAD_PARAMS[TURN_EAGERNESS]
+        logger.info(f"🔧 VAD Parameters (eagerness={TURN_EAGERNESS}): {vad_params}")
+        logger.info(
+            f"🔧 Audio Config: SILENCE_THRESHOLD={SILENCE_THRESHOLD}, MIC_TIMEOUT_SECONDS={MIC_TIMEOUT_SECONDS}"
+        )
+
         self.audio_buffer.clear()
         self.committed = False
         self.first_text = True
@@ -919,7 +927,6 @@ class BillySession:
                                 "audio": {
                                     "input": {
                                         "format": {"type": "audio/pcm", "rate": 24000},
-                                        "transcription": {"model": "whisper-1"},
                                         "turn_detection": {
                                             "type": "server_vad",
                                             **SERVER_VAD_PARAMS[TURN_EAGERNESS],
@@ -1598,6 +1605,9 @@ class BillySession:
         # Trigger a response so Billy actually speaks the acknowledgment
         await self._ws_send_json({"type": "response.create"})
 
+        # Wait a moment for the response to be generated
+        await asyncio.sleep(0.5)
+
     async def _handle_manage_profile(self, raw_args: str | None):
         """Handle profile management via tool calling."""
         args = json.loads(raw_args or "{}")
@@ -1626,6 +1636,12 @@ class BillySession:
                     })
                     return
 
+                # Check if voice change requires session restart
+                if self._check_voice_change(new_persona):
+                    # Voice change requires session restart
+                    await self._restart_session_for_voice_change(new_persona)
+                    return
+
                 # Set user's preferred persona
                 current_user.set_preferred_persona(new_persona)
 
@@ -1634,6 +1650,9 @@ class BillySession:
 
                 # Update session with new persona context
                 await self._update_session_with_user_context()
+
+                # Notify frontend of persona change for UI update
+                await self._notify_persona_change(new_persona)
 
                 # Get persona description for response
                 persona_data = persona_manager.get_current_persona_data()
@@ -1802,6 +1821,61 @@ class BillySession:
             logger.info("Updated session with user context", "👤")
         except Exception as e:
             logger.warning(f"Failed to update session with user context: {e}")
+
+    async def _notify_persona_change(self, persona_name: str):
+        """Notify frontend of persona change for UI updates."""
+        try:
+            # Send a custom message to the frontend to update the UI
+            await self._ws_send_json({
+                "type": "persona_changed",
+                "persona": persona_name,
+                "timestamp": datetime.now().isoformat(),
+            })
+            logger.info(f"Notified frontend of persona change to {persona_name}", "🎭")
+        except Exception as e:
+            logger.warning(f"Failed to notify frontend of persona change: {e}")
+
+    def _check_voice_change(self, new_persona: str) -> bool:
+        """Check if the new persona has a different voice that requires session restart."""
+        try:
+            current_voice = persona_manager.get_current_persona_voice()
+            new_voice = persona_manager.get_persona_voice(new_persona)
+            return current_voice != new_voice
+        except Exception as e:
+            logger.warning(f"Failed to check voice change: {e}")
+            return False
+
+    async def _restart_session_for_voice_change(self, new_persona: str):
+        """Gracefully restart the session when voice changes."""
+        try:
+            logger.info(f"Voice changed, restarting session for {new_persona}", "🔄")
+
+            # Send a message to the user explaining the restart
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": f"Switching to {new_persona} persona. This requires a quick restart to change my voice...",
+                        }
+                    ],
+                },
+            })
+
+            # Close the current session gracefully
+            await self._ws_send_json({"type": "session.close"})
+
+            # Trigger a new session start
+            from .button import start_new_session
+
+            await asyncio.sleep(1)  # Brief pause for graceful shutdown
+            start_new_session()
+
+        except Exception as e:
+            logger.error(f"Failed to restart session for voice change: {e}")
 
     async def _greet_user(self, profile, context: str = ""):
         """Greet a user based on their profile."""

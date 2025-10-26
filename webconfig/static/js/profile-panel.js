@@ -113,9 +113,9 @@ const ProfilePanel = (() => {
             return;
         }
 
-        const interactionCount = currentUser.data.USER_INFO?.interaction_count || "0";
-        const preferredPersona = currentUser.data.USER_INFO?.preferred_persona || "default";
-        const bondLevel = currentUser.data.RELATIONSHIP?.bond_level || "new";
+        const interactionCount = currentUser.data.USER_INFO && currentUser.data.USER_INFO.interaction_count || "0";
+        const preferredPersona = currentUser.data.USER_INFO && currentUser.data.USER_INFO.preferred_persona || "default";
+        const bondLevel = currentUser.data.RELATIONSHIP && currentUser.data.RELATIONSHIP.bond_level || "new";
 
         // Update main panel
         if (elements.currentUserInfo) {
@@ -364,7 +364,7 @@ const ProfilePanel = (() => {
     };
 
     const changePersonaFromHeader = async () => {
-        const selectedPersona = elements.headerPersonaSelect?.value;
+        const selectedPersona = elements.headerPersonaSelect && elements.headerPersonaSelect.value;
         if (!selectedPersona || !currentUser) return;
 
         try {

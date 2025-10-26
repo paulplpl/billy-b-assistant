@@ -7,7 +7,16 @@ import json
 import os
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
+
+
+def get_profiles_dir():
+    """Get the absolute path to the profiles directory."""
+    current_dir = Path(__file__).parent
+    project_root = (
+        current_dir.parent.parent.parent
+    )  # Go up 3 levels: routes -> app -> webconfig -> project root
+    return project_root / "profiles"
 
 
 profiles_bp = Blueprint('profiles', __name__)
@@ -17,7 +26,7 @@ profiles_bp = Blueprint('profiles', __name__)
 def list_profiles():
     """List all available user profiles."""
     try:
-        profiles_dir = Path("profiles")
+        profiles_dir = get_profiles_dir()
         if not profiles_dir.exists():
             return jsonify({"profiles": []})
 
@@ -57,7 +66,7 @@ def get_profile(profile_name):
     """Get details of a specific profile."""
     try:
         # Convert to lowercase to match file naming convention
-        profile_file = Path("profiles") / f"{profile_name.lower()}.ini"
+        profile_file = get_profiles_dir() / f"{profile_name.lower()}.ini"
         if not profile_file.exists():
             return jsonify({"error": "Profile not found"}), 404
 
@@ -81,7 +90,7 @@ def delete_profile(profile_name):
     """Delete a user profile."""
     try:
         # Convert to lowercase to match file naming convention
-        profile_file = Path("profiles") / f"{profile_name.lower()}.ini"
+        profile_file = get_profiles_dir() / f"{profile_name.lower()}.ini"
         if not profile_file.exists():
             return jsonify({"error": "Profile not found"}), 404
 
@@ -224,6 +233,20 @@ def update_current_user():
                     "message": f"Updated {current_user.name}'s preferred persona to {preferred_persona}"
                 })
             return jsonify({"error": "preferred_persona is required"}), 400
+
+        if action == "update_profile":
+            # Update both display name and preferred persona in one action
+            preferred_persona = data.get("preferred_persona")
+            display_name = data.get("display_name")
+
+            if preferred_persona:
+                current_user.set_preferred_persona(preferred_persona)
+
+            if display_name:
+                current_user.set_display_name(display_name)
+
+            return jsonify({"message": f"Updated {current_user.name}'s profile"})
+
         return jsonify({"error": "Unknown action"}), 400
 
     except Exception as e:
@@ -245,8 +268,8 @@ def rename_profile():
             return jsonify({"error": "New name must be different from old name"}), 400
 
         # Convert to lowercase for file operations
-        old_file = Path("profiles") / f"{old_name.lower()}.ini"
-        new_file = Path("profiles") / f"{new_name.lower()}.ini"
+        old_file = get_profiles_dir() / f"{old_name.lower()}.ini"
+        new_file = get_profiles_dir() / f"{new_name.lower()}.ini"
 
         if not old_file.exists():
             return jsonify({"error": "Profile not found"}), 404
@@ -276,17 +299,17 @@ def rename_profile():
 
 @profiles_bp.route('/profiles/delete-memory', methods=['POST'])
 def delete_memory():
-    """Delete a specific memory from a user profile."""
+    """Delete a specific memory from a user profile using memory ID."""
     try:
         data = request.get_json()
         user_name = data.get("user", "").strip()
-        memory_date = data.get("memoryDate", "").strip()
+        memory_id = data.get("memoryId", "").strip()
 
-        if not user_name or not memory_date:
-            return jsonify({"error": "Both user and memoryDate are required"}), 400
+        if not user_name or not memory_id:
+            return jsonify({"error": "Both user and memoryId are required"}), 400
 
         # Convert to lowercase for file operations
-        profile_file = Path("profiles") / f"{user_name.lower()}.ini"
+        profile_file = get_profiles_dir() / f"{user_name.lower()}.ini"
 
         if not profile_file.exists():
             return jsonify({"error": "Profile not found"}), 404
@@ -304,14 +327,33 @@ def delete_memory():
         memories_str = config.get("CORE_MEMORIES", "memories", fallback="[]")
         try:
             memories = json.loads(memories_str)
-        except json.JSONDecodeError:
-            return jsonify({"error": "Invalid memories format"}), 500
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error in delete_memory: {e}")
+            print(f"Malformed memories string: {memories_str}")
+            return jsonify({"error": f"Invalid memories format: {str(e)}"}), 500
 
-        # Find and remove the memory with matching date
+        # Find and remove the memory with matching ID
         original_count = len(memories)
-        memories = [m for m in memories if m.get("date") != memory_date]
+        print(f"DEBUG: Original memory count: {original_count}")
+        print(f"DEBUG: Looking for memory ID: {memory_id}")
+        print(f"DEBUG: Available memory IDs: {[m.get('id') for m in memories]}")
 
-        if len(memories) == original_count:
+        # Handle both real IDs and temporary IDs (for backward compatibility)
+        if memory_id.startswith('temp_'):
+            # For temporary IDs, use the date part to match
+            date_part = memory_id.replace('temp_', '')
+            print(f"DEBUG: Using date-based matching for temp ID: {date_part}")
+            memories = [m for m in memories if m.get("date") != date_part]
+        else:
+            # For real IDs, match by ID
+            print(f"DEBUG: Using ID-based matching")
+            memories = [m for m in memories if m.get("id") != memory_id]
+
+        new_count = len(memories)
+        print(f"DEBUG: New memory count: {new_count}")
+
+        if new_count == original_count:
+            print(f"DEBUG: No memory was removed - memory not found")
             return jsonify({"error": "Memory not found"}), 404
 
         # Update the profile
@@ -321,6 +363,116 @@ def delete_memory():
             config.write(f)
 
         return jsonify({"message": "Memory deleted successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@profiles_bp.route('/profiles/update-memory', methods=['POST'])
+def update_memory():
+    """Update a specific memory in a user profile using memory ID."""
+    try:
+        data = request.get_json()
+        user_name = data.get("user", "").strip()
+        memory_id = data.get("memoryId", "").strip()
+        new_memory = data.get("memory", "").strip()
+        new_category = data.get("category", "fact").strip()
+        new_importance = data.get("importance", "medium").strip()
+
+        if not user_name or not memory_id or not new_memory:
+            return jsonify({"error": "User, memoryId, and memory are required"}), 400
+
+        # Convert to lowercase for file operations
+        profile_file = get_profiles_dir() / f"{user_name.lower()}.ini"
+
+        if not profile_file.exists():
+            return jsonify({"error": "Profile not found"}), 404
+
+        # Read the profile
+        import configparser
+
+        config = configparser.ConfigParser()
+        config.read(profile_file)
+
+        if not config.has_section("CORE_MEMORIES"):
+            return jsonify({"error": "No memories found"}), 404
+
+        # Parse existing memories
+        memories_str = config.get("CORE_MEMORIES", "memories", fallback="[]")
+        try:
+            memories = json.loads(memories_str)
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error in update_memory: {e}")
+            print(f"Malformed memories string: {memories_str}")
+            return jsonify({"error": f"Invalid memories format: {str(e)}"}), 500
+
+        # Find and update the memory with matching ID
+        memory_found = False
+
+        # Handle both real IDs and temporary IDs (for backward compatibility)
+        if memory_id.startswith('temp_'):
+            # For temporary IDs, use the date part to match
+            date_part = memory_id.replace('temp_', '')
+            for memory in memories:
+                if memory.get("date") == date_part:
+                    memory["memory"] = new_memory
+                    memory["category"] = new_category
+                    memory["importance"] = new_importance
+                    memory_found = True
+                    break
+        else:
+            # For real IDs, match by ID
+            for memory in memories:
+                if memory.get("id") == memory_id:
+                    memory["memory"] = new_memory
+                    memory["category"] = new_category
+                    memory["importance"] = new_importance
+                    memory_found = True
+                    break
+
+        if not memory_found:
+            return jsonify({"error": "Memory not found"}), 404
+
+        # Update the profile
+        config.set("CORE_MEMORIES", "memories", json.dumps(memories))
+
+        with open(profile_file, 'w') as f:
+            config.write(f)
+
+        return jsonify({"message": "Memory updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@profiles_bp.route('/profiles/save-memories', methods=['POST'])
+def save_memories():
+    """Save all memories for a user profile (overwrites existing memories)."""
+    try:
+        data = request.get_json()
+        user_name = data.get("user", "").strip()
+        memories = data.get("memories", [])
+
+        if not user_name:
+            return jsonify({"error": "User is required"}), 400
+
+        # Convert to lowercase for file operations
+        profile_file = get_profiles_dir() / f"{user_name.lower()}.ini"
+
+        if not profile_file.exists():
+            return jsonify({"error": "Profile not found"}), 404
+
+        # Read the profile
+        import configparser
+
+        config = configparser.ConfigParser()
+        config.read(profile_file)
+
+        # Update the memories
+        config.set("CORE_MEMORIES", "memories", json.dumps(memories))
+
+        with open(profile_file, 'w') as f:
+            config.write(f)
+
+        return jsonify({"message": f"Saved {len(memories)} memories successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -342,10 +494,16 @@ def update_display_name():
         user = data.get('user')
         display_name = data.get('display_name', '')
 
+        print(
+            f"DEBUG: update_display_name called - user: {user}, display_name: {display_name}"
+        )
+
         if not user:
             return jsonify({"error": "User is required"}), 400
 
-        profile_file = Path("profiles") / f"{user.lower()}.ini"
+        profile_file = get_profiles_dir() / f"{user.lower()}.ini"
+        print(f"DEBUG: update_display_name - profile_file: {profile_file}")
+        print(f"DEBUG: update_display_name - file exists: {profile_file.exists()}")
         if not profile_file.exists():
             return jsonify({"error": "Profile not found"}), 404
 
@@ -370,3 +528,56 @@ def update_display_name():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@profiles_bp.route('/profiles/export/<profile_name>')
+def export_profile(profile_name):
+    """Export a user profile by name."""
+    profiles_dir = get_profiles_dir()
+    profile_file = profiles_dir / f"{profile_name.lower()}.ini"
+
+    print(f"DEBUG: Exporting profile {profile_name}")
+    print(f"DEBUG: Profiles dir: {profiles_dir}")
+    print(f"DEBUG: Looking for file: {profile_file}")
+    print(f"DEBUG: File exists: {profile_file.exists()}")
+
+    if not profile_file.exists():
+        print(f"DEBUG: Profile file not found: {profile_file}")
+        return jsonify({'error': 'Profile not found'}), 404
+
+    return send_file(
+        str(profile_file),
+        as_attachment=True,
+        download_name=f"{profile_name}.ini",
+        mimetype="text/plain",
+    )
+
+
+@profiles_bp.route('/profiles/import/<profile_name>', methods=['POST'])
+def import_profile(profile_name):
+    """Import a profile file to a specific profile name."""
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    try:
+        ini_content = file.read().decode('utf-8')
+        if not ini_content or '[USER_INFO]' not in ini_content:
+            return jsonify({'error': 'Invalid profile file'}), 400
+
+        # Determine target file path
+        profiles_dir = get_profiles_dir()
+        target_file = profiles_dir / f"{profile_name.lower()}.ini"
+        profiles_dir.mkdir(exist_ok=True)
+
+        # Write the imported content
+        with open(target_file, 'w') as f:
+            f.write(ini_content)
+
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

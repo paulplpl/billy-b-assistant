@@ -15,10 +15,10 @@
         <!-- Persona Traits -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-persona-traits">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">psychology</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">psychology</span>
                 Persona Traits
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
             <div id="personality-sliders" class="space-y-4">
                 <!-- JS will populate this -->
@@ -29,10 +29,10 @@
 
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-backstory-instructions">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">auto_stories</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">auto_stories</span>
                 Backstory
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
             <div>
                 <div id="backstory-fields" class="space-y-2"></div>
@@ -44,13 +44,13 @@
             </div>
         </div>
 
-        <!-- Meta Instructions -->
+        <!-- Persona Instructions -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-instructions">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">edit_note</span>
-                Additional Instructions
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">edit_note</span>
+                Persona Instructions
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
             <div>
                 <textarea name="META" id="meta-text" rows="16"
@@ -62,36 +62,84 @@
         <!-- Voice -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-voice">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">record_voice_over</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">record_voice_over</span>
                 Voice
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
-            <div>
-                <label for="VOICE" class="block font-semibold text-sm text-slate-300 mb-2">Voice Selection</label>
-                <select id="VOICE" name="VOICE"
-                        class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                    <option value="alloy">Alloy</option>
-                    <option value="ash">Ash</option>
-                    <option value="ballad">Ballad</option>
-                    <option value="coral">Coral</option>
-                    <option value="echo">Echo</option>
-                    <option value="sage">Sage</option>
-                    <option value="shimmer">Shimmer</option>
-                    <option value="verse">Verse</option>
-                    <option value="marin">Marin</option>
-                    <option value="cedar">Cedar</option>
-                </select>
+            <div class="space-y-4">
+                <!-- Voice Model Selection -->
+                <div>
+                    <label for="VOICE" class="block font-semibold text-sm text-slate-300 mb-2">Voice Model</label>
+                    <select id="VOICE" name="VOICE"
+                            class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        <option value="alloy">Alloy</option>
+                        <option value="ash">Ash</option>
+                        <option value="ballad">Ballad</option>
+                        <option value="coral">Coral</option>
+                        <option value="echo">Echo</option>
+                        <option value="sage">Sage</option>
+                        <option value="shimmer">Shimmer</option>
+                        <option value="verse">Verse</option>
+                        <option value="marin">Marin</option>
+                        <option value="cedar">Cedar</option>
+                    </select>
+                </div>
+
+                <!-- Mouth Articulation Slider -->
+                <div>
+                    <label for="MOUTH_ARTICULATION"
+                           class="flex justify-between items-center font-semibold text-sm text-slate-300">
+                        Mouth Articulation
+                        <span class="material-icons align-middle hover:text-cyan-400 cursor-pointer ml-1"
+                              onclick="toggleTooltip(this)">help_outline</span>
+                    </label>
+
+                    <!-- Tooltip -->
+                    <div class="relative">
+                        <div data-tooltip>
+                            Controls how Billy's mouth moves during speech.<br>
+                            <b>Lower values:</b> More snappy, quick movements<br>
+                            <b>Higher values:</b> Smoother, more fluid movements
+                        </div>
+
+                        <div class="mb-4 mt-2 flex gap-2 items-center">
+                            <div class="w-20 text-sm font-medium text-gray-200">
+                                Level: <span id="persona-mouth-articulation-value">5</span>
+                            </div>
+                            <input type="range" 
+                                   id="MOUTH_ARTICULATION" 
+                                   name="MOUTH_ARTICULATION" 
+                                   min="1" 
+                                   max="10" 
+                                   value="5"
+                                   class="hidden">
+                            <div
+                                    class="relative w-full rounded-full bg-zinc-700 overflow-hidden cursor-pointer h-4"
+                                    id="persona-mouth-articulation-bar"
+                                    style="user-select: none;"
+                            >
+                                <div
+                                        class="absolute left-0 top-0 h-full bg-emerald-500 transition-all duration-100"
+                                        id="persona-mouth-articulation-fill"
+                                        style="width: 50%;"
+                                        data-value="5"
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
         <!-- Wake-up Sounds -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-wakeup-sounds">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">alarm</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">alarm</span>
                 Wake-up Sounds
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
             <div id="wakeup-sound-list" class="space-y-2">
@@ -142,11 +190,11 @@
                     <button onclick="exportPersona()"
                             class="w-full flex gap-2 items-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 cursor-pointer">
                         <span class="material-icons">file_download</span>
-                        Export Persona
+                        Download Persona
                     </button>
                     <label class="w-full flex gap-2 items-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 cursor-pointer">
                         <span class="material-icons">file_upload</span>
-                        <span>Import Persona</span>
+                        <span>Upload Persona</span>
                         <input type="file" accept=".ini" onchange="importPersona(this)" class="hidden"/>
                     </label>
                 </div>

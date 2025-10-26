@@ -4,38 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.0.0] — 2025-10-22
+## [2.0.0] — 2025-10-26
 
-### Major Features
+### 🎉 Major New Features
 
-- **User Profiles**: Individual user profiles with aliases, memories, and preferred personas
-- **Multiple Personas**: Support for different Billy personalities (default, billy-g, pirate, etc.)
-- **Custom Wake-up Sounds**: Generate and store persona-specific wake-up clips
+- **User Profiles**: Billy now recognizes individual users with their own profiles, display names, interaction history, and preferred personas
+- **Memory System**: Billy remembers facts, preferences, and relationships for each user. Memories can be viewed, edited, and organized by importance
+- **Multiple Personas**: Create and switch between different Billy personalities, each with unique voices, traits, and mouth articulation settings
 - **Smart Greetings**: Context-aware greetings based on time of day and interaction history
 
 ### Added
 
-- **User Management**: Create and switch between user profiles with individual settings
-- **Persona System**: Create, edit, and switch between different Billy personalities
-- **Memory System**: Billy remembers user preferences, facts, and relationships
-- **Guest Mode**: Support for guest users with default persona
-- **Wake-up Sound Generation**: AI-generated custom wake-up clips per persona
-- **Configurable Logging**: 4-level logging system (ERROR, WARNING, INFO, VERBOSE)
-- **Mouth Articulation Control**: Slider (1-10) to control speech movement responsiveness
+- **User Management**: Create/switch profiles, set display names, guest mode, import/export profiles, profile statistics
+- **Persona System**: Create custom personalities, per-persona voices and mouth articulation, import/export personas, mid-conversation switching with graceful voice changes
+- **Memory Management**: Store and recall user-specific memories, categorize by type, set importance levels, edit/delete through UI
+- **UI Improvements**: 4-level configurable logging (ERROR/WARNING/INFO/VERBOSE), tooltips, loading states, optimized polling
 
 ### Changed
-
-- **Session Management**: Enhanced with user context and persona switching
-- **Audio System**: Persona-specific wake-up sound directories
+- **Custom Wake-up Sounds**: wake-up sounds are now saved on Persona level.
 - **Logging System**: Replaced DEBUG_MODE with configurable LOG_LEVEL system
-- **Session Flow**: Sessions start immediately but delay mic data until wake-up sound finishes
+- **Mouth Articulation**: Now on persona level instead of global
+- **Storage**: User profiles and personas stored as INI files
 
 ### Fixed
 
 - **Self-Triggering**: Billy no longer hears his own wake-up sounds
 - **Head Movement**: Prevented head from getting stuck during routines
 - **Session Hanging**: Added timeouts to prevent stuck sessions
-
+- **Audio**: Standardized RMS calculations for consistent silence detection
+- 
 ---
 
 ## [1.5.0] — 2025-10-13

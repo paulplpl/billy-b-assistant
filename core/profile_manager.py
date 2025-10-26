@@ -39,11 +39,43 @@ class UserProfile:
         # Parse core memories from JSON
         if 'CORE_MEMORIES' in data:
             try:
-                data['core_memories'] = json.loads(
-                    data['CORE_MEMORIES'].get('memories', '[]')
-                )
-            except json.JSONDecodeError:
-                data['core_memories'] = []
+                memories_str = data['CORE_MEMORIES'].get('memories', '[]')
+                data['core_memories'] = json.loads(memories_str)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse memories JSON for {self.name}: {e}")
+                logger.warning(f"Corrupted memories string: {memories_str[:200]}...")
+
+                # Try to recover by extracting valid JSON entries
+                try:
+                    # Look for complete JSON objects in the corrupted string
+                    import re
+
+                    # Find all complete JSON objects that start with { and end with }
+                    json_objects = re.findall(r'\{[^{}]*"id"[^{}]*\}', memories_str)
+                    recovered_memories = []
+                    for obj_str in json_objects:
+                        try:
+                            recovered_memories.append(json.loads(obj_str))
+                        except json.JSONDecodeError:
+                            continue
+
+                    if recovered_memories:
+                        data['core_memories'] = recovered_memories
+                        logger.info(
+                            f"Recovered {len(recovered_memories)} memories for {self.name}"
+                        )
+                        # Save the recovered memories back to the file
+                        self._save_profile()
+                    else:
+                        data['core_memories'] = []
+                        logger.warning(
+                            f"Could not recover any memories for {self.name}, starting fresh"
+                        )
+                except Exception as recovery_error:
+                    logger.error(
+                        f"Memory recovery failed for {self.name}: {recovery_error}"
+                    )
+                    data['core_memories'] = []
         else:
             data['core_memories'] = []
 
@@ -128,12 +160,19 @@ class UserProfile:
         self, memory: str, importance: str = "medium", category: str = "fact"
     ):
         """Add a memory to the user's profile."""
+        import uuid
+
         memory_entry = {
+            "id": str(uuid.uuid4()),
             "date": datetime.now().isoformat(),
             "memory": memory,
             "importance": importance,
             "category": category,
         }
+
+        # Ensure core_memories is a valid list
+        if not isinstance(self.data.get('core_memories'), list):
+            self.data['core_memories'] = []
 
         self.data['core_memories'].append(memory_entry)
 
@@ -144,8 +183,16 @@ class UserProfile:
             key=lambda x: importance_order.get(x.get("importance", "low"), 1),
         )[-20:]
 
-        self._save_profile()
-        logger.info(f"Added memory for {self.name}: {memory[:50]}...", "💭")
+        # Validate memories before saving
+        try:
+            # Test that memories can be serialized to JSON
+            json.dumps(self.data['core_memories'])
+            self._save_profile()
+            logger.info(f"Added memory for {self.name}: {memory[:50]}...", "💭")
+        except (TypeError, ValueError) as e:
+            logger.error(f"Failed to save memory for {self.name}: {e}")
+            # Remove the problematic memory
+            self.data['core_memories'] = self.data['core_memories'][:-1]
 
     def update_last_seen(self):
         """Update the last seen timestamp."""
@@ -153,9 +200,10 @@ class UserProfile:
         self._save_profile()
 
     def increment_interaction_count(self):
-        """Increment the interaction count (called at end of session)."""
+        """Increment the interaction count and update last_seen (called at end of session)."""
         interaction_count = int(self.data['USER_INFO'].get('interaction_count', '0'))
         self.data['USER_INFO']['interaction_count'] = str(interaction_count + 1)
+        self.data['USER_INFO']['last_seen'] = datetime.now().isoformat()
         self._save_profile()
         logger.info(
             f"Incremented interaction count for {self.name}: {interaction_count + 1}",
@@ -168,9 +216,81 @@ class UserProfile:
         self._save_profile()
         logger.info(f"Set {self.name}'s preferred persona to {persona}", "🎭")
 
+    def set_display_name(self, display_name: str):
+        """Set the user's display name."""
+        self.data['USER_INFO']['display_name'] = display_name
+        self._save_profile()
+        logger.info(f"Set {self.name}'s display name to {display_name}", "👤")
+
     def get_memories(self, limit: int = 5) -> list[dict[str, Any]]:
         """Get recent memories for the user."""
         return self.data['core_memories'][-limit:]
+
+    def get_local_time(self) -> datetime:
+        """Get current time in system timezone."""
+        return datetime.now()
+
+    def fix_corrupted_memories(self):
+        """Manually fix corrupted memories by reading the raw INI file."""
+        try:
+            import configparser
+
+            config = configparser.ConfigParser()
+            config.read(self.profile_path)
+
+            if config.has_section('CORE_MEMORIES'):
+                memories_str = config.get('CORE_MEMORIES', 'memories', fallback='[]')
+                logger.info(f"Raw memories string: {memories_str[:200]}...")
+
+                # Try to extract valid JSON objects using regex
+                import re
+
+                # Find all complete JSON objects
+                json_objects = re.findall(r'\{[^{}]*"id"[^{}]*\}', memories_str)
+                logger.info(f"Found {len(json_objects)} potential JSON objects")
+
+                recovered_memories = []
+                for i, obj_str in enumerate(json_objects):
+                    try:
+                        memory_obj = json.loads(obj_str)
+                        # Validate required fields
+                        if all(
+                            key in memory_obj
+                            for key in [
+                                'id',
+                                'date',
+                                'memory',
+                                'importance',
+                                'category',
+                            ]
+                        ):
+                            recovered_memories.append(memory_obj)
+                            logger.info(
+                                f"Recovered memory {i + 1}: {memory_obj.get('memory', '')[:30]}..."
+                            )
+                        else:
+                            logger.warning(
+                                f"Memory {i + 1} missing required fields: {memory_obj}"
+                            )
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse memory {i + 1}: {e}")
+                        logger.warning(f"Problematic string: {obj_str[:100]}...")
+
+                if recovered_memories:
+                    self.data['core_memories'] = recovered_memories
+                    self._save_profile()
+                    logger.info(
+                        f"Fixed {len(recovered_memories)} memories for {self.name}"
+                    )
+                    return True
+                logger.warning(f"Could not recover any memories for {self.name}")
+                return False
+            logger.info(f"No CORE_MEMORIES section found for {self.name}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to fix corrupted memories for {self.name}: {e}")
+            return False
 
     def get_context_string(self) -> str:
         """Get formatted context string for AI prompt."""
@@ -225,7 +345,9 @@ class UserProfileManager:
     def identify_user(
         self, name: str, confidence: str = "medium"
     ) -> Optional[UserProfile]:
-        """Identify and load a user profile."""
+        """Identify and load a user profile.
+        Note: last_seen is updated at the end of the session, not during identification.
+        """
         name = name.strip().title()
 
         if confidence == "low":
@@ -238,7 +360,6 @@ class UserProfileManager:
             # Load existing profile
             profile = UserProfile(actual_name)
             self.current_user = profile
-            profile.update_last_seen()
             logger.info(
                 f"Identified existing user: {actual_name} (matched '{name}')", "👤"
             )
@@ -246,7 +367,6 @@ class UserProfileManager:
         # Create new profile
         profile = UserProfile(name)
         self.current_user = profile
-        profile.update_last_seen()
         logger.info(f"Created new user profile: {name}", "👤")
         return profile
 

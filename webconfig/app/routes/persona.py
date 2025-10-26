@@ -91,6 +91,8 @@ def save_persona():
     print(
         f"DEBUG: Saving persona '{persona_name}' with wake-up data: {data.get('WAKEUP', {})}"
     )
+    print(f"DEBUG: MOUTH_ARTICULATION: {data.get('MOUTH_ARTICULATION', 'NOT_FOUND')}")
+    print(f"DEBUG: Full data keys: {list(data.keys())}")
 
     # Determine the file path based on persona name
     if persona_name == "default":
@@ -117,13 +119,19 @@ def save_persona():
             "description": meta_data.get("description", ""),
             "instructions": meta_data.get("instructions", ""),
             "voice": meta_data.get("voice", data.get("VOICE", "ballad")),
+            "mouth_articulation": meta_data.get(
+                "mouth_articulation", data.get("MOUTH_ARTICULATION", "5")
+            ),
         }
     else:
         # META is a string (instructions only)
         config["META"] = {
             "instructions": meta_data,
             "voice": data.get("VOICE", "ballad"),
+            "mouth_articulation": data.get("MOUTH_ARTICULATION", "5"),
         }
+
+    print(f"DEBUG: META section being written: {config['META']}")
     wakeup = data.get("WAKEUP", {})
     config["WAKEUP"] = {
         str(k): v["text"] if isinstance(v, dict) and "text" in v else str(v)
@@ -196,6 +204,79 @@ def import_persona():
     try:
         with open(PERSONA_PATH, 'w') as f:
             f.write(ini)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/persona/export/<persona_name>')
+def export_persona_by_name(persona_name):
+    """Export a specific persona by name."""
+
+    try:
+        if persona_name == "default":
+            persona_file = PERSONA_PATH
+        else:
+            # Use the project root personas directory, not relative to webconfig/app
+            from ..state import PROJECT_ROOT
+
+            personas_dir = PROJECT_ROOT / "personas"
+            persona_file = personas_dir / persona_name / "persona.ini"
+
+        print(f"DEBUG: Exporting persona '{persona_name}' from file: {persona_file}")
+        print(f"DEBUG: File exists: {persona_file.exists()}")
+        print(f"DEBUG: Absolute path: {persona_file.absolute()}")
+
+        if not persona_file.exists():
+            return jsonify({'error': f'Persona not found: {persona_file}'}), 404
+
+        return send_file(
+            str(persona_file.absolute()),
+            as_attachment=True,
+            download_name=f"{persona_name}.ini",
+            mimetype="text/plain",
+        )
+    except Exception as e:
+        print(f"ERROR: Export failed for persona '{persona_name}': {str(e)}")
+        return jsonify({'error': f'Export failed: {str(e)}'}), 500
+
+
+@bp.route('/persona/import/<persona_name>', methods=['POST'])
+def import_persona_by_name(persona_name):
+    """Import a persona file to a specific persona name."""
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    try:
+        ini_content = file.read().decode('utf-8')
+        if not ini_content or '[PERSONALITY]' not in ini_content:
+            return jsonify({'error': 'Invalid INI file'}), 400
+
+        # Determine target file path
+        if persona_name == "default":
+            target_file = PERSONA_PATH
+        else:
+            # Use the project root personas directory, not relative to webconfig/app
+            from ..state import PROJECT_ROOT
+
+            personas_dir = PROJECT_ROOT / "personas"
+            target_file = personas_dir / persona_name / "persona.ini"
+            target_file.parent.mkdir(exist_ok=True)
+
+        # Write the imported content
+        with open(target_file, 'w') as f:
+            f.write(ini_content)
+
+        # Clear the persona cache
+        from core.persona_manager import persona_manager
+
+        persona_manager.clear_persona_cache(persona_name)
+
         return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

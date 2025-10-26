@@ -1,6 +1,7 @@
 // ===================== AUDIO =====================
 const AudioPanel = (() => {
     let micCheckSource = null;
+    let serviceWasRunning = false; // Track if service was running before mic test
 
     const micCheckBtn = document.getElementById("mic-check-btn");
     if (micCheckBtn) {
@@ -13,14 +14,25 @@ const AudioPanel = (() => {
         try {
             const data = await ServiceStatus.fetchStatus();
             if (data.status === "active") {
-                showNotification("⚠️ Please stop the Billy service before running speaker test.", "warning");
-                return;
+                showNotification("🛑 Stopping Billy service for speaker test...", "warning");
+                
+                // Stop the Billy service
+                const stopResponse = await fetch("/restart", {method: "POST"});
+                if (!stopResponse.ok) {
+                    throw new Error("Failed to stop Billy service");
+                }
+                
+                // Wait a moment for the service to stop
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                showNotification("✅ Billy service stopped. Running speaker test...", "success");
             }
+            
             await fetch("/speaker-test", {method: "POST"});
-            showNotification("Speaker test triggered");
+            showNotification("🔊 Speaker test triggered");
         } catch (err) {
             console.error("Failed to trigger speaker test:", err);
-            showNotification("Failed to trigger speaker test", "error");
+            showNotification("Failed to trigger speaker test: " + err.message, "error");
         }
         });
     }
@@ -33,28 +45,45 @@ const AudioPanel = (() => {
             btn.classList.remove("bg-emerald-600");
             btn.classList.add("bg-zinc-800");
             showNotification("Mic check stopped");
+            
+            // Restart service if it was running before
+            if (serviceWasRunning) {
+                try {
+                    showNotification("🔄 Restarting Billy service...", "warning");
+                    await fetch("/restart", {method: "POST"});
+                    showNotification("✅ Billy service restarted", "success");
+                    ServiceStatus.fetchStatus();
+                } catch (err) {
+                    console.error("Failed to restart Billy service:", err);
+                    showNotification("❌ Failed to restart Billy service. Please restart manually.", "error");
+                }
+            }
         } else {
             try {
                 const data = await ServiceStatus.fetchStatus();
-                if (data.status === "active") {
-                    await fetch("/service/stop");
-                    showNotification("Billy was stopped for mic check. You’ll need to start it again afterwards.", "warning");
+                serviceWasRunning = (data.status === "active");
+                
+                if (serviceWasRunning) {
+                    showNotification("🛑 Stopping Billy service for mic test...", "warning");
+                    await fetch("/restart", {method: "POST"});
+                    // Wait a moment for the service to stop
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    showNotification("✅ Billy service stopped. Starting mic test...", "success");
                 }
+                
                 startMicCheck();
                 btn.classList.remove("bg-zinc-800");
                 btn.classList.add("bg-emerald-600");
-                if (status !== "active") {
-                    showNotification("Mic check started");
-                }
+                showNotification("🎤 Mic check started");
             } catch (err) {
                 console.error("Failed to toggle mic check:", err);
-                showNotification("Mic check failed", "error");
+                showNotification("Mic check failed: " + err.message, "error");
             }
         }
     }
 
     function stopMicCheck() {
-        micCheckSource?.close();
+        if (micCheckSource) micCheckSource.close();
         fetch("/mic-check/stop");
         micCheckSource = null;
         updateMicBar(0);
@@ -139,7 +168,7 @@ const AudioPanel = (() => {
             let offsetX = e.clientX - rect.left;
             offsetX = Math.max(0, Math.min(offsetX, rect.width));
             const percent = offsetX / rect.width;
-            const scaledThreshold = Math.round(percent * 32768);
+            const scaledThreshold = Math.round(percent * 32768); // Convert to int16 range (0-32768)
             thresholdLine.style.left = `${percent * 100}%`;
             silenceThresholdInput.value = scaledThreshold;
         });

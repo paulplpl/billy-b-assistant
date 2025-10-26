@@ -84,6 +84,40 @@ def service_status():
             env_exists = os.path.exists(env_path)
             env_modified = os.path.getmtime(env_path) if env_exists else 0
 
+            # Get memory count for current user
+            memory_count = 0
+            if current_user:
+                try:
+                    memories = current_user.get_memories(
+                        100
+                    )  # Get up to 100 memories to count
+                    memory_count = len(memories)
+                except Exception as e:
+                    print(f"Failed to get memory count: {e}")
+
+            # Get config hash to detect config changes
+            config_hash = None
+            try:
+                import hashlib
+
+                from ..core_imports import core_config
+
+                # Create a hash of key config values to detect changes
+                config_values = [
+                    str(getattr(core_config, k, ""))
+                    for k in [
+                        "SILENCE_THRESHOLD",
+                        "MIC_TIMEOUT_SECONDS",
+                        "DEFAULT_USER",
+                        "CURRENT_USER",
+                        "MOUTH_ARTICULATION",
+                    ]
+                ]
+                config_string = "|".join(config_values)
+                config_hash = hashlib.md5(config_string.encode()).hexdigest()
+            except Exception as e:
+                print(f"Failed to get config hash: {e}")
+
             return jsonify({
                 "status": service_status,
                 "current_user": current_user_name,
@@ -91,6 +125,8 @@ def service_status():
                 "current_persona": persona_manager.current_persona,
                 "available_profiles": user_manager.list_all_users(),
                 "available_personas": persona_manager.get_available_personas(),
+                "memory_count": memory_count,
+                "config_hash": config_hash,
                 "env_file": {"exists": env_exists, "modified": env_modified},
                 "timestamp": time.time(),
             })

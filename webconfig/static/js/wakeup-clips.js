@@ -69,15 +69,15 @@ document.getElementById("wakeup-sound-list").addEventListener("click", async (e)
     if (!row) return;
     const clipIndex = row.dataset.index;
     const input = row.querySelector("input[type='text']");
-    const phrase = input?.value?.trim();
+    const phrase = input && input.value && input.value.trim();
 
     if (e.target.closest(".wakeup-play-btn")) {
-        const clipIndex = e.target.closest("div[data-index]")?.dataset.index;
+        const clipIndex = e.target.closest("div[data-index]") && e.target.closest("div[data-index]").dataset.index;
         if (!clipIndex) return;
         const tryPlay = async () => {
             // Get current persona from the persona form
             const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
-            const currentPersona = selectedRow?.getAttribute('data-persona') || 'default';
+            const currentPersona = selectedRow && selectedRow.getAttribute('data-persona') || 'default';
             
             const res = await fetch("/wakeup/play", {
                 method: "POST",
@@ -117,7 +117,7 @@ document.getElementById("wakeup-sound-list").addEventListener("click", async (e)
         try {
             // Get current persona from the persona form
             const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
-            const currentPersona = selectedRow?.getAttribute('data-persona') || 'default';
+            const currentPersona = selectedRow && selectedRow.getAttribute('data-persona') || 'default';
             
             const res = await fetch("/wakeup/generate", {
                 method: "POST",
@@ -152,7 +152,7 @@ document.getElementById("wakeup-sound-list").addEventListener("click", async (e)
 
     if (e.target.closest(".remove-wakeup-row")) {
         const row = e.target.closest("div[data-index]");
-        const clipIndex = row?.dataset.index;
+        const clipIndex = row && row.dataset.index;
         if (!clipIndex) return;
         if (!confirm("Are you sure you want to delete this wake-up clip?")) return;
         try {

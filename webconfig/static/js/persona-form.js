@@ -1,5 +1,35 @@
 // ===================== PERSONA FORM =====================
 const PersonaForm = (() => {
+    // Debug logging utility that respects log level
+    const debugLog = (level, message, ...args) => {
+        const levels = { 'ERROR': 0, 'WARNING': 1, 'INFO': 2, 'VERBOSE': 3 };
+        
+        // Get current debug level from settings
+        let currentDebugLevel = 'INFO'; // default
+        if (window.UserProfilePanel && window.UserProfilePanel.debugLevel) {
+            currentDebugLevel = window.UserProfilePanel.debugLevel;
+        }
+        
+        const currentLevel = levels[currentDebugLevel] || 2;
+        const messageLevel = levels[level] || 2;
+
+        if (messageLevel <= currentLevel) {
+            switch (level) {
+                case 'ERROR':
+                    console.error(`[${level}] ${message}`, ...args);
+                    break;
+                case 'WARNING':
+                    console.warn(`[${level}] ${message}`, ...args);
+                    break;
+                case 'INFO':
+                    console.info(`[${level}] ${message}`, ...args);
+                    break;
+                default:
+                    console.log(`[${level}] ${message}`, ...args);
+            }
+        }
+    };
+
     const addBackstoryField = (key = "", value = "") => {
         const wrapper = document.createElement("div");
         wrapper.className = "flex items-center space-x-2";
@@ -225,6 +255,87 @@ const PersonaForm = (() => {
         setupSlider("speaker-volume-bar", "speaker-volume-fill", "speaker-volume", 0, 100);
     }
 
+    // Export persona function
+    window.exportPersona = async function() {
+        try {
+            // Get the currently selected persona from the UI
+            const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
+            const currentPersona = selectedRow && selectedRow.getAttribute('data-persona') || 'default';
+            
+            debugLog('VERBOSE', 'Exporting persona:', currentPersona);
+            debugLog('VERBOSE', 'Selected row:', selectedRow);
+            debugLog('VERBOSE', 'Export URL:', `/persona/export/${currentPersona}`);
+            
+            const response = await fetch(`/persona/export/${currentPersona}`);
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${currentPersona}.ini`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                showNotification(`Exported ${currentPersona} persona`, 'success');
+            } else {
+                console.error('Export failed with status:', response.status);
+                showNotification('Failed to export persona', 'error');
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            showNotification('Export failed: ' + error.message, 'error');
+        }
+    };
+
+    // Import persona function
+    window.importPersona = async function(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        try {
+            // Get the currently selected persona from the UI
+            const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
+            const currentPersona = selectedRow && selectedRow.getAttribute('data-persona') || 'default';
+            
+            debugLog('VERBOSE', 'Importing persona to:', currentPersona);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await fetch(`/persona/import/${currentPersona}`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification(`Imported persona to ${currentPersona}`, 'success');
+                // Reload the current persona
+                if (window.PersonaForm && window.PersonaForm.loadPersona) {
+                    await window.PersonaForm.loadPersona(currentPersona);
+                }
+                // Refresh the persona list to show any changes
+                if (window.PersonaForm && window.PersonaForm.populatePersonaSelector) {
+                    await window.PersonaForm.populatePersonaSelector();
+                }
+                // Refresh user profile panel if it exists
+                if (window.UserProfilePanel && window.UserProfilePanel.loadAllData) {
+                    await window.UserProfilePanel.loadAllData();
+                }
+            } else {
+                const error = await response.json();
+                showNotification('Import failed: ' + error.error, 'error');
+            }
+        } catch (error) {
+            console.error('Import failed:', error);
+            showNotification('Import failed: ' + error.message, 'error');
+        }
+        
+        // Reset the input
+        input.value = '';
+    };
+
+
     const renderBackstoryFields = (backstory) => {
         const container = document.getElementById("backstory-fields");
         container.innerHTML = "";
@@ -247,9 +358,6 @@ const PersonaForm = (() => {
             }
         }
 
-        // Update the persona list to show the loaded persona
-        updatePersonaListSelection(personaName);
-
         // Load the persona data
         const res = await fetch(`/persona/${personaName}`);
         const data = await res.json();
@@ -261,19 +369,76 @@ const PersonaForm = (() => {
 
         renderPersonalitySliders(data.PERSONALITY);
         renderBackstoryFields(data.BACKSTORY);
-        document.getElementById("meta-text").value = data.META?.instructions || "";
+        document.getElementById("meta-text").value = data.META && data.META.instructions || "";
         
         // Load voice setting
         const voiceSelect = document.getElementById("VOICE");
         if (voiceSelect) {
             // Set voice from persona data, or default to 'ballad' if not specified
-            const voice = data.META?.voice || 'ballad';
+            const voice = data.META && data.META.voice || 'ballad';
             voiceSelect.value = voice;
+        }
+        
+        // Load mouth articulation setting
+        const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
+        if (mouthArticulationInput) {
+            // Set mouth articulation from persona data, or default to 5 if not specified
+            const mouthArticulation = data.META && data.META.mouth_articulation || 5;
+            mouthArticulationInput.value = mouthArticulation;
+            updatePersonaMouthArticulationUI(mouthArticulation);
         }
 
         
         // Load wakeup clips in background (non-blocking)
         loadWakeupClips();
+        
+        // Update the current persona tracking for export/import
+        window.PersonaForm = window.PersonaForm || {};
+        window.PersonaForm.currentPersona = personaName;
+        
+        // Update the UI to show the active persona
+        updatePersonaListSelection(personaName);
+    };
+
+    const setPersonaActive = async (personaName) => {
+        try {
+            debugLog('INFO', 'Switching to persona:', personaName);
+            
+            // Switch to the persona in the system
+            const response = await fetch('/profiles/current-user', {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    action: 'switch_persona',
+                    preferred_persona: personaName
+                })
+            });
+
+            debugLog('VERBOSE', 'Persona switch response status:', response.status);
+            
+            if (response.ok) {
+                const result = await response.json();
+                debugLog('VERBOSE', 'Persona switch result:', result);
+                
+                // Update the current persona tracking
+                window.PersonaForm = window.PersonaForm || {};
+                window.PersonaForm.currentPersona = personaName;
+                
+                // Immediately update the UI to show the new active persona
+                updatePersonaListSelection(personaName);
+                
+                // Note: Success notification is now handled by the user switching function
+            } else {
+                const errorData = await response.json();
+                console.error('Failed to switch persona:', errorData);
+                showNotification(`Failed to switch persona: ${errorData.error || 'Unknown error'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error switching persona:', error);
+            showNotification('Error switching persona: ' + error.message, 'error');
+        }
     };
 
 
@@ -284,7 +449,7 @@ const PersonaForm = (() => {
             // Check if the save button is disabled
             const saveButton = document.getElementById("save-persona-btn");
             if (saveButton && saveButton.disabled) {
-                console.log("Save button is disabled, ignoring form submission");
+                debugLog('VERBOSE', "Save button is disabled, ignoring form submission");
                 return;
             }
 
@@ -292,14 +457,14 @@ const PersonaForm = (() => {
             const activeElement = document.activeElement;
             if (activeElement && activeElement.classList.contains('cursor-not-allowed') && 
                 activeElement.classList.contains('opacity-50')) {
-                console.log("Form submission triggered by disabled delete button, ignoring");
+                debugLog('VERBOSE', "Form submission triggered by disabled delete button, ignoring");
                 return;
             }
 
             // Also check the event target for disabled delete buttons
             if (e.target && e.target.classList.contains('cursor-not-allowed') && 
                 e.target.classList.contains('opacity-50')) {
-                console.log("Form submission triggered by disabled delete button (event target), ignoring");
+                debugLog('VERBOSE', "Form submission triggered by disabled delete button (event target), ignoring");
                 return;
             }
 
@@ -314,7 +479,7 @@ const PersonaForm = (() => {
                 if (activeBlock) {
                     // Get the trait name from the label in the same wrapper
                     const wrapper = slider.closest('.flex.gap-2');
-                    const label = wrapper?.querySelector('.text-slate-300');
+                    const label = wrapper && wrapper.querySelector('.text-slate-300');
                     if (label) {
                         // Extract trait name from the label text
                         const traitDisplay = label.textContent.trim();
@@ -350,21 +515,26 @@ const PersonaForm = (() => {
 
             const meta = document.getElementById("meta-text").value.trim();
             const voice = document.getElementById("VOICE").value;
+            const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
+            const mouthArticulation = mouthArticulationInput ? mouthArticulationInput.value : "5";
+            
+            debugLog('VERBOSE', 'Mouth articulation input found:', !!mouthArticulationInput);
+            debugLog('VERBOSE', 'Mouth articulation value:', mouthArticulation);
 
             const wakeup = {};
             const rows = document.querySelectorAll("#wakeup-sound-list .flex[data-index]");
             let currentIndex = 1;
             rows.forEach((row) => {
-                const phrase = row.querySelector("input[type='text']")?.value?.trim();
+                const phrase = row.querySelector("input[type='text']") && row.querySelector("input[type='text']").value && row.querySelector("input[type='text']").value.trim();
                 if (phrase) { wakeup[currentIndex++] = phrase; }
             });
 
             // Get the currently selected persona from the list
             const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
-            const personaName = selectedRow?.getAttribute('data-persona') || 'default';
+            const personaName = selectedRow && selectedRow.getAttribute('data-persona') || 'default';
             
-            console.log('Saving persona:', personaName);
-            console.log('Wake-up data:', wakeup);
+            debugLog('INFO', 'Saving persona:', personaName);
+            debugLog('VERBOSE', 'Wake-up data:', wakeup);
             
             await fetch("/persona", {
                 method: "POST",
@@ -375,6 +545,7 @@ const PersonaForm = (() => {
                     BACKSTORY: backstory, 
                     META: meta, 
                     VOICE: voice,
+                    MOUTH_ARTICULATION: mouthArticulation,
                     WAKEUP: wakeup 
                 })
             });
@@ -418,12 +589,12 @@ const PersonaForm = (() => {
 
         // Prevent multiple simultaneous calls
         if (isPopulatingPersonas) {
-            console.log('populatePersonaSelector already in progress, skipping...');
+            debugLog('VERBOSE', 'populatePersonaSelector already in progress, skipping...');
             return;
         }
 
         isPopulatingPersonas = true;
-        console.log('Starting populatePersonaSelector...');
+        debugLog('VERBOSE', 'Starting populatePersonaSelector...');
 
         try {
             const configData = await ConfigService.fetchConfig();
@@ -451,7 +622,7 @@ const PersonaForm = (() => {
                     }
                 }
                 
-                console.log('Current persona for delete button logic:', currentPersona);
+                debugLog('VERBOSE', 'Current persona for delete button logic:', currentPersona);
                 
                 // Sort personas: default first, then custom ones
                 const sortedPersonas = configData.AVAILABLE_PERSONAS.sort((a, b) => {
@@ -460,25 +631,27 @@ const PersonaForm = (() => {
                     return a.name.localeCompare(b.name);
                 });
                 
-                // Load voice information for each persona
-                const personasWithVoice = await Promise.all(sortedPersonas.map(async (persona) => {
+                // Load full persona data including voice and description
+                const personasWithFullData = await Promise.all(sortedPersonas.map(async (persona) => {
                     try {
                         const response = await fetch(`/persona/${persona.name}`);
                         const data = await response.json();
                         return {
                             ...persona,
-                            voice: data.META?.voice || 'ballad'
+                            voice: data.META && data.META.voice || 'ballad',
+                            description: data.META && data.META.description || persona.name
                         };
                     } catch (error) {
-                        console.error(`Failed to load voice for ${persona.name}:`, error);
+                        console.error(`Failed to load data for ${persona.name}:`, error);
                         return {
                             ...persona,
-                            voice: 'ballad'
+                            voice: 'ballad',
+                            description: persona.name
                         };
                     }
                 }));
                 
-                personasWithVoice.forEach(persona => {
+                personasWithFullData.forEach(persona => {
                     const row = document.createElement('div');
                     row.className = 'flex items-center justify-between p-3 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors cursor-pointer border border-zinc-700';
                     row.setAttribute('data-persona', persona.name);
@@ -495,8 +668,7 @@ const PersonaForm = (() => {
                         );
                     }
                     
-                    console.log(`Persona ${persona.name}: isDefault=${isDefault}, isCurrentPersona=${isCurrentPersona}, isPreferredPersona=${isPreferredPersona}, currentPersona=${currentPersona}`);
-                    console.log('Available profiles data:', configData.AVAILABLE_PROFILES);
+                    debugLog('VERBOSE', `Persona ${persona.name}: isDefault=${isDefault}, isCurrentPersona=${isCurrentPersona}, isPreferredPersona=${isPreferredPersona}, currentPersona=${currentPersona}`);
                     
                     row.innerHTML = `
                         <div class="flex items-center space-x-3">
@@ -508,8 +680,9 @@ const PersonaForm = (() => {
                         </div>
                         <div class="flex items-center space-x-2">
         ${!isDefault ? `
-          <button class="${isCurrentPersona || isPreferredPersona ? 'text-gray-400 cursor-not-allowed opacity-50' : 'text-zinc-500 hover:text-rose-400'} p-1 rounded transition-colors" 
-                  onclick="event.stopPropagation(); ${isCurrentPersona || isPreferredPersona ? 'window.PersonaForm.showPreferredPersonaDeleteMessage()' : `window.PersonaForm.deletePersona('${persona.name}')`}" 
+          <button type="button" 
+                  class="${isCurrentPersona || isPreferredPersona ? 'text-gray-400 cursor-not-allowed opacity-50' : 'text-zinc-500 hover:text-rose-400'} p-1 rounded transition-colors" 
+                  onclick="event.stopPropagation(); ${isCurrentPersona || isPreferredPersona ? `window.PersonaForm.showPreferredPersonaDeleteMessage('${persona.name}')` : `window.PersonaForm.deletePersona('${persona.name}')`}" 
                   title="${isCurrentPersona || isPreferredPersona ? 'Cannot delete preferred persona' : 'Delete persona'}">
               <span class="material-icons text-sm">delete</span>
           </button>
@@ -532,7 +705,7 @@ const PersonaForm = (() => {
             console.error('Failed to load available personas:', error);
         } finally {
             isPopulatingPersonas = false;
-            console.log('Finished populatePersonaSelector');
+            debugLog('VERBOSE', 'Finished populatePersonaSelector');
         }
     };
 
@@ -540,6 +713,35 @@ const PersonaForm = (() => {
         if (personaName === 'default') {
             showNotification('Cannot delete the default persona', 'error');
             return;
+        }
+
+        // Check if this persona is currently active
+        const selectedRow = document.querySelector('#persona-list [data-persona].border-emerald-500');
+        const currentPersona = selectedRow && selectedRow.getAttribute('data-persona');
+        if (personaName === currentPersona) {
+            showNotification('Cannot delete the currently active persona. Switch to a different persona first, then delete this one.', 'error', 8000);
+            return;
+        }
+
+        // Check if this persona is preferred by any user
+        try {
+            const response = await fetch('/config');
+            const configData = await response.json();
+            
+            if (configData && configData.AVAILABLE_PROFILES) {
+                const connectedUser = configData.AVAILABLE_PROFILES.find(profile => 
+                    profile.data && profile.data.USER_INFO && 
+                    profile.data.USER_INFO.preferred_persona === personaName
+                );
+                
+                if (connectedUser) {
+                    const userName = connectedUser.name;
+                    showNotification(`Cannot delete "${personaName}" persona - it is currently set as ${userName}'s preferred persona. Change the user's preferred persona first, then delete this one.`, 'error', 8000);
+                    return;
+                }
+            }
+        } catch (error) {
+            console.error('Failed to check persona connections:', error);
         }
 
         if (!confirm(`Are you sure you want to delete the "${personaName}" persona? This action cannot be undone.`)) {
@@ -575,11 +777,21 @@ const PersonaForm = (() => {
         const personaList = document.getElementById("persona-list");
         if (!personaList) return;
 
+        debugLog('VERBOSE', 'Updating persona selection to:', selectedPersonaName);
+
         // Remove active class from all rows
         const rows = personaList.querySelectorAll('[data-persona]');
         rows.forEach(row => {
             row.classList.remove('border-emerald-500', 'bg-emerald-900/20');
             row.classList.add('border-zinc-700');
+            
+            // Reset set_meal icon color
+            const setMealIcon = row.querySelector('.set_meal');
+            if (setMealIcon) {
+                setMealIcon.classList.remove('text-emerald-500');
+                setMealIcon.classList.add('text-zinc-400');
+                debugLog('VERBOSE', 'Reset icon color for:', row.dataset.persona);
+            }
         });
 
         // Add active class to selected row
@@ -587,7 +799,103 @@ const PersonaForm = (() => {
         if (selectedRow) {
             selectedRow.classList.remove('border-zinc-700');
             selectedRow.classList.add('border-emerald-500', 'bg-emerald-900/20');
+            
+            // Set set_meal icon to green for active persona
+            const setMealIcon = selectedRow.querySelector('.material-icons');
+            if (setMealIcon && setMealIcon.textContent === 'set_meal') {
+                setMealIcon.classList.remove('text-zinc-400');
+                setMealIcon.classList.add('text-emerald-500');
+                debugLog('VERBOSE', 'Set icon to green for:', selectedPersonaName);
+            } else {
+                debugLog('VERBOSE', 'No set_meal icon found for:', selectedPersonaName);
+            }
+        } else {
+            debugLog('VERBOSE', 'No selected row found for:', selectedPersonaName);
         }
+
+        // Also update persona selector dropdowns
+        const personaSelect = document.getElementById('persona-select');
+        if (personaSelect) {
+            personaSelect.value = selectedPersonaName;
+        }
+        
+        const headerPersonaSelect = document.getElementById('header-persona-select');
+        if (headerPersonaSelect) {
+            headerPersonaSelect.value = selectedPersonaName;
+        }
+    };
+
+    // Function to ensure icon colors are always in sync with border colors
+    const syncIconColors = () => {
+        const personaList = document.getElementById("persona-list");
+        if (!personaList) return;
+
+        const rows = personaList.querySelectorAll('[data-persona]');
+        rows.forEach(row => {
+            const setMealIcon = row.querySelector('.material-icons');
+            if (setMealIcon && setMealIcon.textContent === 'set_meal') {
+                if (row.classList.contains('border-emerald-500')) {
+                    setMealIcon.classList.remove('text-zinc-400');
+                    setMealIcon.classList.add('text-emerald-500');
+                } else {
+                    setMealIcon.classList.remove('text-emerald-500');
+                    setMealIcon.classList.add('text-zinc-400');
+                }
+            }
+        });
+    };
+
+    // Update persona mouth articulation UI
+    const updatePersonaMouthArticulationUI = (value) => {
+        const bar = document.getElementById('persona-mouth-articulation-bar');
+        const fill = document.getElementById('persona-mouth-articulation-fill');
+        const valueDisplay = document.getElementById('persona-mouth-articulation-value');
+        
+        if (bar && fill && valueDisplay) {
+            const percent = ((value - 1) / 9) * 100; // 1-10 range to 0-100%
+            fill.style.width = `${percent}%`;
+            fill.dataset.value = value;
+            valueDisplay.textContent = value;
+        }
+    };
+
+    // Initialize persona mouth articulation slider
+    const initPersonaMouthArticulationSlider = () => {
+        const bar = document.getElementById('persona-mouth-articulation-bar');
+        const fill = document.getElementById('persona-mouth-articulation-fill');
+        const input = document.getElementById('MOUTH_ARTICULATION');
+        const valueDisplay = document.getElementById('persona-mouth-articulation-value');
+
+        if (!bar || !fill || !input || !valueDisplay) return;
+
+        let isDragging = false;
+        
+        const updateUI = (val) => {
+            const percent = ((val - 1) / 9) * 100; // 1-10 range to 0-100%
+            fill.style.width = `${percent}%`;
+            fill.dataset.value = val;
+            input.value = val;
+            input.setAttribute('value', val);
+            valueDisplay.textContent = val;
+        };
+        
+        const updateFromMouse = (e) => {
+            const rect = bar.getBoundingClientRect();
+            const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+            const val = Math.round(1 + percent * 9); // 1-10 range
+            input.value = val;
+            input.setAttribute('value', val);
+            input.dispatchEvent(new Event("input", {bubbles: true}));
+            updateUI(val);
+        };
+        
+        bar.addEventListener("mousedown", (e) => { isDragging = true; updateFromMouse(e); });
+        document.addEventListener("mousemove", (e) => { if (isDragging) updateFromMouse(e); });
+        document.addEventListener("mouseup", () => { isDragging = false; });
+        input.addEventListener("input", () => updateUI(Number(input.value)));
+        
+        // Initialize with current value
+        updateUI(Number(input.value));
     };
 
     const bindPersonaSelector = () => {
@@ -622,12 +930,6 @@ const PersonaForm = (() => {
         }
 
         try {
-            // Show loading state
-            const saveButton = document.getElementById('save-persona-btn');
-            const originalText = saveButton.innerHTML;
-            saveButton.innerHTML = '<span class="material-icons animate-spin">refresh</span> Saving...';
-            saveButton.disabled = true;
-            
             // Get current persona data using the same logic as handlePersonaSave
             const personality = {};
             // Get trait values from the block sliders
@@ -637,7 +939,7 @@ const PersonaForm = (() => {
                 if (activeBlock) {
                     // Get the trait name from the label in the same wrapper
                     const wrapper = slider.closest('.flex.gap-2');
-                    const label = wrapper?.querySelector('.text-slate-300');
+                    const label = wrapper && wrapper.querySelector('.text-slate-300');
                     if (label) {
                         // Extract trait name from the label text
                         const traitDisplay = label.textContent.trim();
@@ -673,12 +975,17 @@ const PersonaForm = (() => {
 
             const meta = document.getElementById("meta-text").value.trim();
             const voice = document.getElementById("VOICE").value;
+            const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
+            const mouthArticulation = mouthArticulationInput ? mouthArticulationInput.value : "5";
+            
+            debugLog('VERBOSE', 'Mouth articulation input found:', !!mouthArticulationInput);
+            debugLog('VERBOSE', 'Mouth articulation value:', mouthArticulation);
 
             const wakeup = {};
             const rows = document.querySelectorAll("#wakeup-sound-list .flex[data-index]");
             let currentIndex = 1;
             rows.forEach((row) => {
-                const phrase = row.querySelector("input[type='text']")?.value?.trim();
+                const phrase = row.querySelector("input[type='text']") && row.querySelector("input[type='text']").value && row.querySelector("input[type='text']").value.trim();
                 if (phrase) { wakeup[currentIndex++] = phrase; }
             });
 
@@ -719,6 +1026,11 @@ const PersonaForm = (() => {
                 // Load the new persona (this will switch to it and show it as active)
                 await loadPersona(cleanName);
                 
+                // Refresh user profile panel if it exists
+                if (window.UserProfilePanel && window.UserProfilePanel.loadAllData) {
+                    await window.UserProfilePanel.loadAllData();
+                }
+                
                 // Show additional notification that we're now editing the new persona
                 setTimeout(() => {
                     showNotification(`Now editing "${personaName}" - you can make further adjustments`, 'info');
@@ -730,30 +1042,58 @@ const PersonaForm = (() => {
         } catch (error) {
             console.error('Failed to save persona as:', error);
             showNotification('Failed to save persona', 'error');
-        } finally {
-            // Restore button state
-            saveButton.innerHTML = originalText;
-            saveButton.disabled = false;
         }
     };
 
     // Show message for why active persona can't be deleted
     const showActivePersonaDeleteMessage = () => {
-        showNotification('Cannot delete active persona - it is currently linked to a user profile. Switch to a different persona first, then delete this one.', 'warning');
+        showNotification('Cannot delete active persona - it is currently linked to a user profile. Switch to a different persona first, then delete this one.', 'warning', 8000);
     };
 
     // Show message for why preferred persona can't be deleted
-    const showPreferredPersonaDeleteMessage = () => {
-        showNotification('Cannot delete preferred persona - it is currently set as a user\'s preferred persona. Change the user\'s preferred persona first, then delete this one.', 'error');
+    const showPreferredPersonaDeleteMessage = async (personaName) => {
+        try {
+            // Get the user profile that has this persona as preferred
+            const response = await fetch('/config');
+            const configData = await response.json();
+            
+            let connectedUser = null;
+            if (configData && configData.AVAILABLE_PROFILES) {
+                connectedUser = configData.AVAILABLE_PROFILES.find(profile => 
+                    profile.data && profile.data.USER_INFO && 
+                    profile.data.USER_INFO.preferred_persona === personaName
+                );
+            }
+            
+            const userName = connectedUser ? connectedUser.name : 'a user';
+            showNotification(`Cannot delete "${personaName}" persona - it is currently set as ${userName}'s preferred persona. Change the user's preferred persona first, then delete this one.`, 'error', 8000);
+        } catch (error) {
+            console.error('Failed to get user info for persona deletion message:', error);
+            showNotification('Cannot delete preferred persona - it is currently set as a user\'s preferred persona. Change the user\'s preferred persona first, then delete this one.', 'error', 8000);
+        }
     };
 
     // Clear persona cache
     const clearPersonaCache = () => {
         // Clear any cached persona data
-        console.log('Clearing persona cache');
+        debugLog('VERBOSE', 'Clearing persona cache');
     };
 
-    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection};
+    const handlePersonaChangeNotification = (personaName) => {
+        // Update the UI to reflect the persona change
+        debugLog('INFO', 'Persona changed to:', personaName);
+        
+        // Use a small delay to ensure the DOM is ready
+        setTimeout(() => {
+            updatePersonaListSelection(personaName);
+            // Also sync icon colors to ensure they match border colors
+            syncIconColors();
+        }, 100);
+        
+        // No notification needed - the visual UI update is sufficient
+    };
+
+    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, syncIconColors, initPersonaMouthArticulationSlider};
 })();
 
 

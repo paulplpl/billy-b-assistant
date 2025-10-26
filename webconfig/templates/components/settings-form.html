@@ -4,10 +4,10 @@
         <!-- Software Settings -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-software">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">settings</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">settings</span>
                 General Settings
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
             <div class="mb-4 relative">
@@ -181,10 +181,10 @@
         <!-- Hardware Settings -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-hardware">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">build</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">build</span>
                 Hardware Settings
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
             <div class="mb-4 relative">
@@ -263,10 +263,10 @@
         <!-- Audio -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-audio">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">volume_up</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">volume_up</span>
                 Audio Settings
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
             <div class="flex items-center gap-2 mb-4">
@@ -297,11 +297,11 @@
 
                 <div class="flex-1/2 flex flex-col justify-between">
                     <label for="SILENCE_THRESHOLD" class="block font-semibold text-sm text-slate-300">Silence
-                        Threshold (RMS)
+                        Threshold (0-32768)
                     </label>
-                    <input type="number" step="1" id="SILENCE_THRESHOLD"
+                    <input type="number" step="1" min="0" max="32768" id="SILENCE_THRESHOLD"
                            class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                           name="SILENCE_THRESHOLD" value="{{ config.get('SILENCE_THRESHOLD', '1') }}">
+                           name="SILENCE_THRESHOLD" value="{{ config.get('SILENCE_THRESHOLD', '1000') }}">
                 </div>
             </div>
 
@@ -406,58 +406,15 @@
                 </div>
             </div>
 
-            <!-- Mouth Articulation Slider -->
-            <div class="mb-4">
-                <label for="MOUTH_ARTICULATION"
-                       class="flex justify-between items-center font-semibold text-sm text-slate-300">
-                    Mouth Articulation
-                    <span class="material-icons align-middle hover:text-cyan-400 cursor-pointer ml-1"
-                          onclick="toggleTooltip(this)">help_outline</span>
-                </label>
-
-                <!-- Tooltip -->
-                <div class="relative">
-                    <div data-tooltip>
-                        Controls how Billy's mouth moves during speech.<br>
-                        <b>Lower values:</b> More snappy, quick movements<br>
-                        <b>Higher values:</b> Smoother, more fluid movements
-                    </div>
-
-                    <div class="mb-4 mt-2 flex gap-2 items-center">
-                        <div class="w-20 text-sm font-medium text-gray-200">
-                            Level: <span id="mouth-articulation-value">{{ config.get('MOUTH_ARTICULATION', '5') }}</span>
-                        </div>
-                        <input type="range" 
-                               id="MOUTH_ARTICULATION" 
-                               name="MOUTH_ARTICULATION" 
-                               min="1" 
-                               max="10" 
-                               value="{{ config.get('MOUTH_ARTICULATION', '5') }}"
-                               class="hidden">
-                        <div
-                                class="relative w-full rounded-full bg-zinc-700 overflow-hidden cursor-pointer h-4"
-                                id="mouth-articulation-bar"
-                                style="user-select: none;"
-                        >
-                            <div
-                                    class="absolute left-0 top-0 h-full bg-emerald-500 transition-all duration-100"
-                                    id="mouth-articulation-fill"
-                                    style="width: 50%;"
-                                    data-value="{{ config.get('MOUTH_ARTICULATION', '5') }}"
-                            ></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- MQTT Settings -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-mqtt">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">cloud_queue</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">cloud_queue</span>
                 MQTT Settings
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
             <div class="mb-4">
@@ -509,10 +466,10 @@
         <!-- Home Assistant -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-ha">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">home</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">home</span>
                 Home Assistant
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
             <div class="mb-4">
                 <label for="HA_HOST" class="block font-semibold text-sm text-slate-300">Home Assistant
@@ -569,12 +526,13 @@
             </div>
         </div>
 
+
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-ui-settings">
-            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200">
-                <span class="material-icons text-white">palette</span>
+            <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">palette</span>
                 UI Settings
-                <span class="material-icons transition-transform duration-200 ml-2 rotate-0">expand_more</span>
+                <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
             <div class="mb-4">
@@ -597,43 +555,4 @@
         </div>
     </form>
 
-    <div class="sticky bottom-0 z-10 p-4 backdrop-blur-md">
-        <div class="flex justify-center">
-            <div class="relative inline-block">
-                <!-- Split button -->
-                <div class="flex rounded shadow overflow-hidden border border-emerald-500">
-                    <button
-                            id="save-btn"
-                            class="bg-emerald-500 hover:bg-emerald-400 text-zinc-800 font-semibold py-2 px-4 flex items-center gap-1 focus:outline-none"
-                            type="submit"
-                            form="config-form"
-                    >
-                        <span class="material-icons align-middle">save</span>
-                        Save Settings
-                    </button>
-                    <button
-                            id="dropdown-btn"
-                            type="button"
-                            class="dropdown-toggle bg-emerald-500 hover:bg-emerald-400 text-zinc-800 px-2 flex items-center"
-                            onclick="toggleDropdown(this)"
-                    >
-                        <span class="material-icons align-middle transition-transform duration-200">expand_more</span>
-                    </button>
-                </div>
-                <!-- Dropdown -->
-                <div class="dropdown-menu absolute bottom-0 right-0 w-full text-zinc-800 border border-emerald-500  backdrop-blur-xs  rounded  z-20 hidden">
-                    <button onclick="exportSettings()"
-                            class="w-full flex gap-2 items-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 cursor-pointer">
-                        <span class="material-icons">file_download</span>
-                        Export Settings
-                    </button>
-                    <label class="w-full flex gap-2 items-center px-4 py-2 bg-emerald-500/80relative bg-emerald-500 hover:bg-emerald-400 cursor-pointer">
-                        <span class="material-icons">file_upload</span>
-                        <span>Import Settings</span>
-                        <input type="file" accept=".env" onchange="importSettings(this)" class="hidden"/>
-                    </label>
-                </div>
-            </div>
-        </div>
-    </div>
 </section>

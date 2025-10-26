@@ -7,7 +7,7 @@ from threading import Lock, Thread
 import lgpio
 import numpy as np
 
-from .config import BILLY_PINS, MOUTH_ARTICULATION, is_classic_billy
+from .config import BILLY_PINS, is_classic_billy
 from .logger import logger
 
 
@@ -161,7 +161,22 @@ def move_tail_async(duration=0.3):
 
 def _articulation_multiplier():
     """Return direct articulation multiplier (1 = normal, higher = slower)."""
-    return max(0, min(10, float(MOUTH_ARTICULATION)))
+    try:
+        # Try to get mouth articulation from current persona
+        from .persona_manager import persona_manager
+
+        current_persona_data = persona_manager.get_current_persona_data()
+
+        if current_persona_data and current_persona_data.get('meta', {}).get(
+            'mouth_articulation'
+        ):
+            persona_articulation = current_persona_data['meta']['mouth_articulation']
+            return max(0, min(10, float(persona_articulation)))
+        # Fall back to global setting
+        return 5
+    except Exception as e:
+        # Fall back to global setting on error
+        return 5
 
 
 # === Mouth Sync ===

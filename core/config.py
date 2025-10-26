@@ -83,6 +83,7 @@ USER RECOGNITION:
 - ALWAYS call `identify_user` at conversation start
 - Greet users by name when known
 - In guest mode, IMMEDIATELY call `identify_user` when someone introduces themselves (e.g., "Hey billy it is tom", "I am Tom", "My name is Sarah")
+- NAME CONFUSION: If you're uncertain about name spelling (e.g., "Thom" vs "Tom", "Sarah" vs "Sara"), set confidence to "low" to ask for spelling confirmation. This helps avoid misidentifying users with similar-sounding names.
 
 TURN CLOSURE:
 - After EVERY spoken response, call `follow_up_intent` once
@@ -146,7 +147,7 @@ BILLY_PINS = os.getenv("BILLY_PINS", "new").strip().lower()
 SPEAKER_PREFERENCE = os.getenv("SPEAKER_PREFERENCE")
 MIC_PREFERENCE = os.getenv("MIC_PREFERENCE")
 MIC_TIMEOUT_SECONDS = int(os.getenv("MIC_TIMEOUT_SECONDS", "5"))
-SILENCE_THRESHOLD = int(os.getenv("SILENCE_THRESHOLD", "1500"))
+SILENCE_THRESHOLD = float(os.getenv("SILENCE_THRESHOLD", "1000"))
 CHUNK_MS = int(os.getenv("CHUNK_MS", "40"))
 PLAYBACK_VOLUME = 1
 MOUTH_ARTICULATION = int(os.getenv("MOUTH_ARTICULATION", "5"))
@@ -169,9 +170,9 @@ SERVER_VAD_PARAMS = {
         "silence_duration_ms": 300,  # Standard wait time
     },
     "high": {
-        "threshold": 0.5,  # Same sensitivity as medium
+        "threshold": 0.5,  # Standard sensitivity
         "prefix_padding_ms": 300,
-        "silence_duration_ms": 200,  # Respond faster after silence
+        "silence_duration_ms": 200,  # Standard wait time
     },
 }
 
