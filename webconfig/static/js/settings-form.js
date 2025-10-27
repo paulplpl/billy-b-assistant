@@ -75,6 +75,14 @@ const SettingsForm = (() => {
                 payload.MOUTH_ARTICULATION = mouthArticulationInput.value;
             }
 
+            // Manually add SHOW_RC_VERSIONS value (only set to True when checked)
+            const showRCVersionsCheckbox = document.getElementById("SHOW_RC_VERSIONS");
+            if (showRCVersionsCheckbox && showRCVersionsCheckbox.checked) {
+                payload.SHOW_RC_VERSIONS = 'True';
+            } else {
+                payload.SHOW_RC_VERSIONS = 'False';
+            }
+
             let hostnameChanged = false;
 
             const saveResponse = await fetch("/save", {

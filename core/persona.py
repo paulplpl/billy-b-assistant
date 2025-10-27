@@ -204,6 +204,12 @@ def update_persona_ini(trait: str, value: int, ini_path="persona.ini"):
     """Update a single trait value in the persona.ini file. Only do this if configured
     to do so."""
     from .config import ALLOW_UPDATE_PERSONALITY_INI
+    from .logger import logger
+
+    logger.info(
+        f"update_persona_ini called: trait={trait}, value={value}, ini_path={ini_path}, ALLOW_UPDATE={ALLOW_UPDATE_PERSONALITY_INI}",
+        "🎛️",
+    )
 
     if ALLOW_UPDATE_PERSONALITY_INI:
         import configparser
@@ -218,3 +224,9 @@ def update_persona_ini(trait: str, value: int, ini_path="persona.ini"):
 
         with open(ini_path, "w") as f:
             config.write(f)
+
+        logger.info(f"Successfully updated {trait}={value} in {ini_path}", "✅")
+    else:
+        logger.warning(
+            f"Personality update disabled (ALLOW_UPDATE_PERSONALITY_INI=False)", "⚠️"
+        )

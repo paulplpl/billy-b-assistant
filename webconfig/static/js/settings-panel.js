@@ -27,20 +27,27 @@ class UserProfilePanel {
         // User profile button click handler
         const userProfileBtn = document.getElementById('user-profile-btn');
         if (userProfileBtn) {
-            userProfileBtn.addEventListener('click', () => this.showPanel());
+            userProfileBtn.addEventListener('click', () => this.openSettingsModal());
         }
 
         // Close panel button
         const closeBtn = document.getElementById('close-user-panel');
         if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.hidePanel());
+            closeBtn.addEventListener('click', () => this.closeSettingsModal());
         }
 
-        // Click outside to close
-        this.panel.addEventListener('click', (e) => {
-            if (e.target === this.panel) {
-                this.hidePanel();
+        // Click outside to close (only if both mousedown and mouseup on backdrop)
+        let mouseDownOnBackdrop = false;
+        
+        this.panel.addEventListener('mousedown', (e) => {
+            mouseDownOnBackdrop = e.target === this.panel;
+        });
+        
+        this.panel.addEventListener('mouseup', (e) => {
+            if (mouseDownOnBackdrop && e.target === this.panel) {
+                this.closeSettingsModal();
             }
+            mouseDownOnBackdrop = false;
         });
 
         // Set guest button
@@ -219,14 +226,14 @@ class UserProfilePanel {
         return this.currentUser || 'Guest';
     }
 
-    showPanel() {
+    openSettingsModal() {
         if (this.panel) {
             this.panel.classList.remove('hidden');
             this.loadAllData();
         }
     }
 
-    hidePanel() {
+    closeSettingsModal() {
         if (this.panel) {
             this.panel.classList.add('hidden');
         }
@@ -314,15 +321,16 @@ class UserProfilePanel {
 
             row.innerHTML = `
                 <div class="flex items-center space-x-3">
-                    <button class="${isDefault ? 'text-amber-400' : 'text-zinc-500'} hover:text-amber-300 p-1 rounded transition-colors" 
+                    <button class="${isCurrent ? (isDefault ? 'text-amber-400' : 'text-zinc-500') : 'invisible'} hover:text-amber-300 p-1 rounded transition-colors" 
                             onclick="event.stopPropagation(); window.UserProfilePanel.setAsDefault('${profileName}')" 
-                            title="Set as default profile (loads automatically on startup)">
+                            title="Set as default profile (loads automatically on startup)"
+                            ${!isCurrent ? 'disabled' : ''}>
                         <span class="material-icons text-base">${isDefault ? 'star' : 'star_border'}</span>
                     </button>
                     <span class="material-icons ${isCurrent ? 'text-emerald-400' : 'text-zinc-400'}">person</span>
                     <div>
                         <div class="text-white font-medium">${displayName}</div>
-                        <div class="text-xs text-zinc-400">${profileName} • ${isDefault ? 'Default (auto-loads on startup)' : 'User'}</div>
+                        <div class="text-xs text-zinc-400">${isDefault ? 'Default (auto-loads on startup)' : 'User'}</div>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -610,8 +618,8 @@ class UserProfilePanel {
 
             const memories = data?.CURRENT_USER?.data?.core_memories || [];
             if (memories.length > 0) {
-                const recentMemories = memories.slice(-5).reverse();
-                memoriesList.innerHTML = recentMemories.map(memory => `
+                const allMemories = [...memories].reverse();
+                memoriesList.innerHTML = allMemories.map(memory => `
                     <div class="flex items-center justify-between py-2 px-3 bg-zinc-800 rounded-lg">
                         <div class="flex-1">
                             <p class="text-sm text-zinc-200">${memory.memory}</p>
@@ -1507,6 +1515,10 @@ class UserProfilePanel {
     // (optional) handle /save DEFAULT_USER <select> in header if present
     async updateDefaultUser(user) {
         await this.setAsDefault(user);
+    }
+
+    showNewProfileInfo() {
+        this.showNotification('Start a conversation with Billy and introduce yourself and a new profile will be created', 'info');
     }
 }
 

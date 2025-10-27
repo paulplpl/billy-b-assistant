@@ -16,6 +16,7 @@ class PersonaManager:
     def __init__(self):
         self.personas_dir = Path("personas")
         self.personas_dir.mkdir(exist_ok=True)
+        self.persona_presets_dir = Path("persona_presets")
         self.current_persona = "default"  # Default persona
         self._persona_cache: dict[str, dict[str, Any]] = {}
 
@@ -192,6 +193,81 @@ class PersonaManager:
         else:
             self._persona_cache.clear()
             logger.info("Cleared all persona cache", "🎭")
+
+    def get_persona_presets(self) -> list[dict]:
+        """Get list of available persona preset templates."""
+        presets = []
+
+        if not self.persona_presets_dir.exists():
+            return presets
+
+        # Check for presets in persona_presets/*/persona.ini
+        for folder_path in self.persona_presets_dir.iterdir():
+            if folder_path.is_dir():
+                preset_file = folder_path / "persona.ini"
+                if preset_file.exists():
+                    preset_name = folder_path.name
+                    try:
+                        config = configparser.ConfigParser()
+                        config.read(preset_file)
+
+                        # Get name and description from META section
+                        name = config.get("META", "name", fallback=preset_name.title())
+                        description = config.get("META", "description", fallback="")
+
+                        presets.append({
+                            "id": preset_name,
+                            "name": name,
+                            "description": description,
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to load preset {preset_name}: {e}")
+
+        return sorted(presets, key=lambda x: x["name"])
+
+    def create_persona_from_preset(
+        self, preset_id: str, new_persona_name: str, display_name: str = None
+    ) -> bool:
+        """Create a new persona from a persona preset template."""
+        try:
+            # Load the preset
+            preset_file = self.persona_presets_dir / preset_id / "persona.ini"
+            if not preset_file.exists():
+                logger.error(f"Preset not found: {preset_id}")
+                return False
+
+            # Create the new persona directory
+            new_persona_dir = self.personas_dir / new_persona_name
+            new_persona_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy the preset file to the new persona
+            import shutil
+
+            shutil.copy(preset_file, new_persona_dir / "persona.ini")
+
+            # Update the name in the persona file if display_name is provided
+            if display_name:
+                new_persona_file = new_persona_dir / "persona.ini"
+                config = configparser.ConfigParser()
+                config.read(new_persona_file)
+
+                if config.has_section('META'):
+                    config.set('META', 'name', display_name)
+
+                    with open(new_persona_file, 'w') as f:
+                        config.write(f)
+
+            # Clear cache for the new persona
+            self.clear_persona_cache(new_persona_name)
+
+            logger.info(
+                f"Created persona '{new_persona_name}' from preset '{preset_id}'", "🎭"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to create persona from preset: {e}")
+            return False
 
 
 # Global persona manager instance

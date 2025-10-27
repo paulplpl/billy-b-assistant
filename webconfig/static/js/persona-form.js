@@ -76,9 +76,9 @@ const PersonaForm = (() => {
             'warmth': 'Warmth',
             'curiosity': 'Curiosity',
             'verbosity': 'Talkative',
-            'formality': 'Formal',
-            'sarcasm': 'Sarcastic',
-            'honesty': 'Honest'
+            'formality': 'Formality',
+            'sarcasm': 'Sarcasm',
+            'honesty': 'Honesty'
         };
 
         // Default values for missing traits
@@ -371,6 +371,16 @@ const PersonaForm = (() => {
         renderBackstoryFields(data.BACKSTORY);
         document.getElementById("meta-text").value = data.META && data.META.instructions || "";
         
+        // Load display name and description
+        const displayNameInput = document.getElementById("persona-display-name");
+        if (displayNameInput) {
+            displayNameInput.value = data.META && data.META.name || "";
+        }
+        const descriptionInput = document.getElementById("persona-description");
+        if (descriptionInput) {
+            descriptionInput.value = data.META && data.META.description || "";
+        }
+        
         // Load voice setting
         const voiceSelect = document.getElementById("VOICE");
         if (voiceSelect) {
@@ -490,9 +500,9 @@ const PersonaForm = (() => {
                             'Warmth': 'warmth',
                             'Curiosity': 'curiosity',
                             'Talkative': 'verbosity',
-                            'Formal': 'formality',
-                            'Sarcastic': 'sarcasm',
-                            'Honest': 'honesty'
+                            'Formality': 'formality',
+                            'Sarcasm': 'sarcasm',
+                            'Honesty': 'honesty'
                         };
                         const traitKey = traitMap[traitDisplay];
                         if (traitKey) {
@@ -513,13 +523,24 @@ const PersonaForm = (() => {
                 }
             });
 
-            const meta = document.getElementById("meta-text").value.trim();
+            const instructions = document.getElementById("meta-text").value.trim();
+            const displayName = document.getElementById("persona-display-name")?.value.trim() || "";
+            const description = document.getElementById("persona-description")?.value.trim() || "";
             const voice = document.getElementById("VOICE").value;
             const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
             const mouthArticulation = mouthArticulationInput ? mouthArticulationInput.value : "5";
             
             debugLog('VERBOSE', 'Mouth articulation input found:', !!mouthArticulationInput);
             debugLog('VERBOSE', 'Mouth articulation value:', mouthArticulation);
+            
+            // Build META object
+            const meta = {
+                name: displayName,
+                description: description,
+                instructions: instructions,
+                voice: voice,
+                mouth_articulation: mouthArticulation
+            };
 
             const wakeup = {};
             const rows = document.querySelectorAll("#wakeup-sound-list .flex[data-index]");
@@ -543,9 +564,7 @@ const PersonaForm = (() => {
                     persona_name: personaName,
                     PERSONALITY: personality, 
                     BACKSTORY: backstory, 
-                    META: meta, 
-                    VOICE: voice,
-                    MOUTH_ARTICULATION: mouthArticulation,
+                    META: meta,
                     WAKEUP: wakeup 
                 })
             });
@@ -631,22 +650,24 @@ const PersonaForm = (() => {
                     return a.name.localeCompare(b.name);
                 });
                 
-                // Load full persona data including voice and description
+                // Load full persona data including name and description
                 const personasWithFullData = await Promise.all(sortedPersonas.map(async (persona) => {
                     try {
                         const response = await fetch(`/persona/${persona.name}`);
                         const data = await response.json();
                         return {
                             ...persona,
-                            voice: data.META && data.META.voice || 'ballad',
-                            description: data.META && data.META.description || persona.name
+                            displayName: data.META && data.META.name || persona.name,
+                            description: data.META && data.META.description || '',
+                            voice: data.META && data.META.voice || 'ballad'
                         };
                     } catch (error) {
                         console.error(`Failed to load data for ${persona.name}:`, error);
                         return {
                             ...persona,
-                            voice: 'ballad',
-                            description: persona.name
+                            displayName: persona.name,
+                            description: '',
+                            voice: 'ballad'
                         };
                     }
                 }));
@@ -670,12 +691,17 @@ const PersonaForm = (() => {
                     
                     debugLog('VERBOSE', `Persona ${persona.name}: isDefault=${isDefault}, isCurrentPersona=${isCurrentPersona}, isPreferredPersona=${isPreferredPersona}, currentPersona=${currentPersona}`);
                     
+                    // Build display text: "Name - Description" or just "Name" if no description
+                    const displayText = persona.description 
+                        ? `${persona.displayName} - ${persona.description}`
+                        : persona.displayName;
+                    
                     row.innerHTML = `
                         <div class="flex items-center space-x-3">
                             <span class="material-icons ${isCurrentPersona ? 'text-emerald-400' : 'text-zinc-400'}">set_meal</span>
                             <div>
-                                <div class="text-white font-medium">${persona.description || persona.name}</div>
-                                <div class="text-xs text-zinc-400">${persona.name} • Voice: ${persona.voice}</div>
+                                <div class="text-white font-medium">${displayText}</div>
+                                <div class="text-xs text-zinc-400">${persona.voice}</div>
                             </div>
                         </div>
                         <div class="flex items-center space-x-2">
@@ -950,9 +976,9 @@ const PersonaForm = (() => {
                             'Warmth': 'warmth',
                             'Curiosity': 'curiosity',
                             'Talkative': 'verbosity',
-                            'Formal': 'formality',
-                            'Sarcastic': 'sarcasm',
-                            'Honest': 'honesty'
+                            'Formality': 'formality',
+                            'Sarcasm': 'sarcasm',
+                            'Honesty': 'honesty'
                         };
                         const traitKey = traitMap[traitDisplay];
                         if (traitKey) {
@@ -973,7 +999,9 @@ const PersonaForm = (() => {
                 }
             });
 
-            const meta = document.getElementById("meta-text").value.trim();
+            const instructions = document.getElementById("meta-text").value.trim();
+            const displayName = document.getElementById("persona-display-name")?.value.trim() || personaName.trim();
+            const description = document.getElementById("persona-description")?.value.trim() || "";
             const voice = document.getElementById("VOICE").value;
             const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
             const mouthArticulation = mouthArticulationInput ? mouthArticulationInput.value : "5";
@@ -993,12 +1021,12 @@ const PersonaForm = (() => {
                 PERSONALITY: personality,
                 BACKSTORY: backstory,
                 META: {
-                    name: cleanName,
-                    description: personaName.trim(),
-                    instructions: meta,
-                    voice: voice
+                    name: displayName,
+                    description: description,
+                    instructions: instructions,
+                    voice: voice,
+                    mouth_articulation: mouthArticulation
                 },
-                VOICE: voice,
                 WAKEUP: wakeup
             };
 
@@ -1093,7 +1121,183 @@ const PersonaForm = (() => {
         // No notification needed - the visual UI update is sufficient
     };
 
-    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, syncIconColors, initPersonaMouthArticulationSlider};
+    const handlePersonalityChange = (personalityTraits) => {
+        // Update the UI to reflect personality trait changes
+        debugLog('INFO', 'Personality traits changed:', personalityTraits);
+        
+        // Update personality sliders if they exist
+        Object.entries(personalityTraits).forEach(([trait, value]) => {
+            const slider = document.getElementById(trait);
+            if (slider) {
+                slider.value = value;
+                // Update any associated display elements
+                const valueDisplay = document.getElementById(`${trait}-value`);
+                if (valueDisplay) {
+                    valueDisplay.textContent = value;
+                }
+                // Update any associated progress bars
+                const progressBar = document.getElementById(`${trait}-bar`);
+                if (progressBar) {
+                    const percent = (value / 100) * 100;
+                    progressBar.style.width = `${percent}%`;
+                }
+            }
+        });
+        
+        // Show a subtle notification that personality was updated
+        if (window.showNotification) {
+            const changedTraits = Object.entries(personalityTraits)
+                .map(([trait, value]) => `${trait}: ${value}%`)
+                .join(', ');
+            window.showNotification(`Personality updated: ${changedTraits}`, 'info');
+        }
+    };
+
+    // Create Persona Modal Functions
+    let selectedPresetId = null;
+
+    const openCreatePersonaModal = async () => {
+        const modal = document.getElementById('create-persona-modal');
+        if (!modal) return;
+        
+        // Clear previous input
+        const nameInput = document.getElementById('new-persona-name');
+        if (nameInput) nameInput.value = '';
+        
+        // Load presets
+        await loadPresets();
+        
+        // Show modal
+        modal.classList.remove('hidden');
+    };
+
+    const closeCreatePersonaModal = () => {
+        const modal = document.getElementById('create-persona-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            selectedPresetId = null;
+        }
+    };
+
+    const loadPresets = async () => {
+        try {
+            const response = await fetch('/persona/presets');
+            const presets = await response.json();
+            
+            const presetList = document.getElementById('preset-list');
+            if (!presetList) return;
+            
+            // Sort presets to put "blank" first, then alphabetically by name
+            const sortedPresets = presets.sort((a, b) => {
+                if (a.id === 'blank') return -1;
+                if (b.id === 'blank') return 1;
+                return a.name.localeCompare(b.name);
+            });
+            
+            presetList.innerHTML = sortedPresets.map(preset => `
+                <div class="preset-option p-3 border border-zinc-700 rounded cursor-pointer hover:border-emerald-500 transition-colors ${preset.id === selectedPresetId ? 'border-emerald-500 bg-emerald-900/20' : ''}"
+                     data-preset-id="${preset.id}"
+                     onclick="window.PersonaForm.selectPreset('${preset.id}')">
+                    <div class="font-medium text-white">${preset.name}</div>
+                    ${preset.description ? `<div class="text-sm text-zinc-400 mt-1">${preset.description}</div>` : ''}
+                </div>
+            `).join('');
+            
+            // Select first preset by default (which will be "blank" if it exists)
+            if (sortedPresets.length > 0 && !selectedPresetId) {
+                selectPreset(sortedPresets[0].id);
+            }
+        } catch (error) {
+            console.error('Failed to load presets:', error);
+            showNotification('Failed to load persona templates', 'error');
+        }
+    };
+
+    const selectPreset = (presetId) => {
+        selectedPresetId = presetId;
+        
+        // Update UI to show selection
+        const presetOptions = document.querySelectorAll('.preset-option');
+        presetOptions.forEach(option => {
+            if (option.dataset.presetId === presetId) {
+                option.classList.add('border-emerald-500', 'bg-emerald-900/20');
+            } else {
+                option.classList.remove('border-emerald-500', 'bg-emerald-900/20');
+            }
+        });
+    };
+
+    const createPersonaFromModal = async () => {
+        const nameInput = document.getElementById('new-persona-name');
+        const personaName = nameInput?.value.trim();
+        
+        if (!personaName) {
+            showNotification('Please enter a persona name', 'error');
+            return;
+        }
+        
+        if (!selectedPresetId) {
+            showNotification('Please select a template', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/persona/create-from-preset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    preset_id: selectedPresetId,
+                    persona_name: personaName
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                showNotification(`Persona "${result.persona_name}" created successfully`, 'success');
+                closeCreatePersonaModal();
+                
+                // Refresh persona list
+                await populatePersonaSelector();
+                
+                // Load the new persona
+                await loadPersona(result.persona_name);
+            } else {
+                showNotification(`Failed to create persona: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('Failed to create persona:', error);
+            showNotification('Failed to create persona', 'error');
+        }
+    };
+
+    // Initialize modal event listeners
+    const initCreatePersonaModal = () => {
+        const modal = document.getElementById('create-persona-modal');
+        if (!modal) return;
+
+        // Close button
+        const closeBtn = document.getElementById('close-create-persona-modal');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeCreatePersonaModal);
+        }
+
+        // Click outside to close (only if both mousedown and mouseup on backdrop)
+        let mouseDownOnBackdrop = false;
+        
+        modal.addEventListener('mousedown', (e) => {
+            mouseDownOnBackdrop = e.target === modal;
+        });
+        
+        modal.addEventListener('mouseup', (e) => {
+            if (mouseDownOnBackdrop && e.target === modal) {
+                closeCreatePersonaModal();
+            }
+            mouseDownOnBackdrop = false;
+        });
+    };
+
+    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, handlePersonalityChange, syncIconColors, initPersonaMouthArticulationSlider, openCreatePersonaModal, closeCreatePersonaModal, selectPreset, createPersonaFromModal, initCreatePersonaModal};
 })();
 
 

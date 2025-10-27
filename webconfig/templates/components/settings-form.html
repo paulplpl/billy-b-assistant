@@ -1,6 +1,6 @@
 <!-- Settings Form -->
 <section>
-    <form id="config-form" class="px-6">
+    <form id="config-form" class="p-6">
         <!-- Software Settings -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
              id="section-software">
@@ -528,14 +528,15 @@
 
 
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4 collapsible-section"
-             id="section-ui-settings">
+             id="section-advanced-settings">
             <h3 class="flex items-center gap-2 cursor-pointer group text-lg grow justify-between font-bold mb-4 text-slate-200 hover:text-emerald-400 transition-colors">
-                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">palette</span>
-                UI Settings
+                <span class="material-icons text-white group-hover:text-emerald-400 transition-colors">tune</span>
+                Advanced Settings
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
-            <div class="mb-4">
+            <div class="space-y-4">
+                <!-- UI Animations -->
                 <div class="flex items-center justify-between p-3">
                     <div class="flex items-center gap-3">
                         <div>
@@ -545,11 +546,30 @@
                     </div>
                     <button id="toggle-motion-btn"
                             type="button"
-                            class="bg-zinc-700 hover:bg-zinc-600 transition-all text-white text-sm py-2 px-4 rounded flex gap-2 items-center cursor-pointer"
+                            class="hover:bg-zinc-700 transition-all text-emerald-400 text-sm py-2 px-4 rounded flex gap-2 items-center cursor-pointer"
                             title="Toggle UI animations">
                         <span class="material-icons">blur_on</span>
                         <span id="motion-status-text">Enabled</span>
                     </button>
+                </div>
+
+                <!-- Show RC Versions -->
+                <div class="flex items-center justify-between p-3">
+                    <div class="flex items-center gap-3">
+                        <div>
+                            <div class="text-white font-medium text-sm">Show Release Candidate software updates</div>
+                            <div class="text-xs text-zinc-400">Enable to get early access to new software features</div>
+                        </div>
+                    </div>
+                    <button id="toggle-rc-versions-btn"
+                            type="button"
+                            class="hover:bg-zinc-700 transition-all text-white text-sm py-2 px-4 rounded flex gap-2 items-center cursor-pointer"
+                            title="Toggle RC versions">
+                        <span class="material-icons">science</span>
+                        <span id="rc-versions-status-text">Disabled</span>
+                    </button>
+                    <!-- Hidden checkbox for form submission -->
+                    <input type="checkbox" id="SHOW_RC_VERSIONS" name="SHOW_RC_VERSIONS" class="hidden" value="True">
                 </div>
             </div>
         </div>

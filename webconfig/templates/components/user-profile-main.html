@@ -3,10 +3,18 @@
     <form id="profile-form" class="p-4">
         <!-- Profile Selector -->
         <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 p-4 rounded-lg shadow-lg mb-4">
-            <h3 class="text-lg font-bold mb-4 text-slate-200 flex items-center">
-                <span class="material-icons mr-2 text-emerald-400">person</span>
-                User Profiles
-            </h3>
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-200 flex items-center">
+                    <span class="material-icons mr-2 text-emerald-400">person</span>
+                    User Profiles
+                </h3>
+                <button type="button" 
+                        class="flex items-center justify-center w-8 h-8 bg-emerald-500 hover:bg-emerald-400 text-white rounded transition-colors"
+                        title="Start a conversation with Billy to create a new profile"
+                        onclick="window.UserProfilePanel.showNewProfileInfo()">
+                    <span class="material-icons text-base">add</span>
+                </button>
+            </div>
             <div id="profile-list-main" class="space-y-1">
                 <!-- Profile list will be populated here -->
             </div>
@@ -35,7 +43,7 @@
                 <span class="material-icons transition-transform duration-200 ml-2 rotate-0 group-hover:text-emerald-400">expand_more</span>
             </h3>
 
-            <div id="memories-list-main" class="space-y-2 overflow-y-auto">
+            <div id="memories-list-main" class="space-y-2 overflow-y-auto max-h-screen">
                 <p class="text-sm text-zinc-400 italic">No memories yet</p>
             </div>
         </div>

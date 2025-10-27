@@ -42,21 +42,31 @@ function toggleDropdown(btn) {
 
 function toggleTooltip(el) {
     el.classList.toggle("text-cyan-400")
-    const container = el.closest("label") && el.closest("label").parentElement;
-    if (!container) return;
-    const tooltip = container.querySelector("[data-tooltip]");
-    if (tooltip) {
-        const visible = tooltip.getAttribute("data-visible") === "true";
-        tooltip.setAttribute("data-visible", visible ? "false" : "true");
-    }
+    const label = el.closest("label")
+    const tooltip = label.parentElement.querySelector("[data-tooltip]")
+    const visible = tooltip.getAttribute("data-visible") === "true"
+    tooltip.setAttribute("data-visible", visible ? "false" : "true")
 }
 
 document.addEventListener('click', (e) => {
+    // Close dropdowns when clicking outside
     document.querySelectorAll('.dropdown-menu').forEach(menu => {
         if (!menu.classList.contains('hidden') && !menu.closest('.relative').contains(e.target)) {
             menu.classList.add('hidden');
             const arrow = menu.parentElement.querySelector('.dropdown-toggle .material-icons');
             if (arrow) arrow.classList.remove('rotate-180');
+        }
+    });
+    
+    // Close tooltips when clicking outside
+    document.querySelectorAll('[data-tooltip]').forEach(tooltip => {
+        if (tooltip.getAttribute('data-visible') === 'true' && !tooltip.contains(e.target)) {
+            const container = tooltip.parentElement;
+            const helpIcon = container.querySelector('.material-icons');
+            if (helpIcon && !helpIcon.contains(e.target)) {
+                tooltip.setAttribute('data-visible', 'false');
+                helpIcon.classList.remove('text-cyan-400');
+            }
         }
     });
 });

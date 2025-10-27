@@ -232,12 +232,51 @@ const LogPanel = (() => {
         const btn = elements.toggleMotionBtn;
         const icon = btn.querySelector(".material-icons");
         const statusText = document.getElementById("motion-status-text");
-        btn.classList.toggle("bg-zinc-700");
         document.documentElement.classList.toggle("reduce-motion");
         const isReduced = document.documentElement.classList.contains("reduce-motion");
         localStorage.setItem("reduceMotion", isReduced ? "1" : "0");
+        
+        // Update text color based on state
+        if (isReduced) {
+            btn.classList.remove("text-emerald-400");
+            btn.classList.add("text-white");
+        } else {
+            btn.classList.remove("text-white");
+            btn.classList.add("text-emerald-400");
+        }
+        
         if (icon) icon.textContent = isReduced ? "blur_off" : "blur_on";
         if (statusText) statusText.textContent = isReduced ? "Disabled" : "Enabled";
+    };
+
+    const toggleShowRCVersions = () => {
+        const btn = document.getElementById("toggle-rc-versions-btn");
+        const icon = btn?.querySelector(".material-icons");
+        const statusText = document.getElementById("rc-versions-status-text");
+        const hiddenCheckbox = document.getElementById("SHOW_RC_VERSIONS");
+        
+        if (!btn) return;
+        
+        // Toggle the visual state based on current text color
+        const isCurrentlyEnabled = btn.classList.contains("text-emerald-400");
+        
+        // Update text color based on new state
+        if (isCurrentlyEnabled) {
+            // Currently enabled, switch to disabled
+            btn.classList.remove("text-emerald-400");
+            btn.classList.add("text-white");
+            if (statusText) statusText.textContent = "Disabled";
+            if (hiddenCheckbox) hiddenCheckbox.checked = false;
+        } else {
+            // Currently disabled, switch to enabled
+            btn.classList.remove("text-white");
+            btn.classList.add("text-emerald-400");
+            if (statusText) statusText.textContent = "Enabled";
+            if (hiddenCheckbox) hiddenCheckbox.checked = true;
+        }
+        
+        // Update icon
+        if (icon) icon.textContent = "science";
     };
 
     const toggleFullscreenLog = () => {
@@ -349,6 +388,7 @@ const LogPanel = (() => {
         elements.toggleEnvBtn.addEventListener("click", toggleEnvPanel);
         elements.toggleMotionBtn.addEventListener("click", toggleMotion);
         elements.saveEnvBtn.addEventListener("click", saveEnv);
+        
         elements.rebootBillyBtn.addEventListener("click", rebootBilly);
         elements.restartUIBtn.addEventListener("click", restartUI);
         elements.shutdownBillyBtn.addEventListener("click", shutdownBilly);
@@ -376,8 +416,49 @@ const LogPanel = (() => {
             const icon = btn.querySelector(".material-icons");
             const statusText = document.getElementById("motion-status-text");
             btn.classList.remove("bg-zinc-700");
+            btn.classList.remove("text-emerald-400");
+            btn.classList.add("text-white");
             if (icon) icon.textContent = "blur_off";
             if (statusText) statusText.textContent = "Disabled";
+        } else {
+            // Ensure enabled state has emerald color
+            const btn = elements.toggleMotionBtn;
+            btn.classList.remove("text-white");
+            btn.classList.add("text-emerald-400");
+        }
+        
+        // Load RC versions setting
+        fetch('/config')
+            .then(res => res.json())
+            .then(data => {
+                const toggleRCVersionsBtn = document.getElementById("toggle-rc-versions-btn");
+                const icon = toggleRCVersionsBtn?.querySelector(".material-icons");
+                const statusText = document.getElementById("rc-versions-status-text");
+                
+                if (toggleRCVersionsBtn) {
+                    const isEnabled = data.SHOW_RC_VERSIONS === 'True' || data.SHOW_RC_VERSIONS === true;
+                    const hiddenCheckbox = document.getElementById("SHOW_RC_VERSIONS");
+                    
+                    if (isEnabled) {
+                        toggleRCVersionsBtn.classList.remove("text-white");
+                        toggleRCVersionsBtn.classList.add("text-emerald-400");
+                        if (hiddenCheckbox) hiddenCheckbox.checked = true;
+                    } else {
+                        toggleRCVersionsBtn.classList.remove("text-emerald-400");
+                        toggleRCVersionsBtn.classList.add("text-white");
+                        if (hiddenCheckbox) hiddenCheckbox.checked = false;
+                    }
+                    
+                    if (icon) icon.textContent = "science";
+                    if (statusText) statusText.textContent = isEnabled ? "Enabled" : "Disabled";
+                }
+            })
+            .catch(err => console.error('Failed to load RC versions setting:', err));
+
+        // Add event listener for RC versions toggle
+        const toggleRCVersionsBtn = document.getElementById("toggle-rc-versions-btn");
+        if (toggleRCVersionsBtn) {
+            toggleRCVersionsBtn.addEventListener('click', toggleShowRCVersions);
         }
 
         // Handle password change modal and button visibility

@@ -35,6 +35,12 @@ from .mqtt import mqtt_publish
 from .persona import update_persona_ini
 from .persona_manager import persona_manager
 from .profile_manager import user_manager
+from .song_manager import song_manager
+
+
+def _get_dynamic_song_description():
+    """Get dynamic song description based on available songs."""
+    return song_manager.get_dynamic_tool_description()
 
 
 def get_instructions_with_user_context():
@@ -151,27 +157,30 @@ def get_tools_for_current_mode():
         {
             "name": "update_personality",
             "type": "function",
-            "description": "Adjusts Billy's personality traits. Accepts numeric values (0-100) or level names (min/low/med/high/max)",
+            "description": "Adjusts Billy's personality traits. Accepts numeric values (0-100) or level names (min/low/med/high/max). Call this function when users request personality changes.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    trait: {
-                        "oneOf": [
-                            {"type": "integer", "minimum": 0, "maximum": 100},
-                            {
-                                "type": "string",
-                                "enum": ["min", "low", "med", "high", "max"],
-                            },
-                        ]
+                    **{
+                        trait: {
+                            "oneOf": [
+                                {"type": "integer", "minimum": 0, "maximum": 100},
+                                {
+                                    "type": "string",
+                                    "enum": ["min", "low", "med", "high", "max"],
+                                },
+                            ]
+                        }
+                        for trait in vars(PERSONALITY)
                     }
-                    for trait in vars(PERSONALITY)
                 },
+                "additionalProperties": False,
             },
         },
         {
             "name": "play_song",
             "type": "function",
-            "description": "Plays a special Billy song based on a given name.",
+            "description": _get_dynamic_song_description(),
             "parameters": {
                 "type": "object",
                 "properties": {"song": {"type": "string"}},
@@ -508,6 +517,25 @@ class BillySession:
         args = json.loads(raw_args or "{}")
         changes = []
 
+        # Get current persona file path
+        current_persona = persona_manager.current_persona
+        if current_persona == "default":
+            persona_file_path = "persona.ini"
+        else:
+            from pathlib import Path
+
+            personas_dir = Path("personas")
+            # Use new folder structure: personas/persona_name/persona.ini
+            persona_file_path = personas_dir / current_persona / "persona.ini"
+            if not persona_file_path.exists():
+                # Fall back to old structure: personas/persona_name.ini
+                persona_file_path = personas_dir / f"{current_persona}.ini"
+
+        logger.info(
+            f"Updating personality for persona: {current_persona}, file: {persona_file_path}",
+            "🎛️",
+        )
+
         # Level to numeric value mapping
         level_to_value = {
             'min': 4,  # middle of 0-9 range
@@ -530,7 +558,7 @@ class BillySession:
                     continue  # Skip invalid values
 
                 setattr(PERSONALITY, trait, numeric_val)
-                update_persona_ini(trait, numeric_val)
+                update_persona_ini(trait, numeric_val, str(persona_file_path))
                 changes.append((trait, numeric_val))
 
         if changes:

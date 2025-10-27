@@ -16,18 +16,20 @@ The **Billy Bass Assistant** is a Raspberry Pi–powered voice assistant embedde
 - Physical button to start/interact/intervene
 - 3D-printable backplate for housing USB microphone and speaker
 - Support for the Modern Billy hardware version with 2 motors as well as the Classic Billy hardware version (3 motors)
+- Custom song playback with coordinated mouth and tail animations
+- Home Assistant command passthrough using the Conversation API
 - Lightweight web UI:
-  - Adjust settings and persona of Billy
+  - User profile management with memory system
+  - Multiple personas with configurable voices and traits
+  - Song manager for custom songs with upload and playback configuration
+  - Adjust settings like custom Hostname and Port configuration
   - View debug logs
   - Start/stop/restart Billy
-  - Export/Import of settings and persona
-  - Hostname and Port configuration
+  - Export/Import of settings, personas, and user profiles
 - MQTT support:
   - sensor with status updates of Billy (idle, speaking, listening)
   - `billy/say` topic for triggering spoken messages remotely
   - Raspberry Pi Safe Shutdown command
-- Home Assistant command passthrough using the Conversation API
-- Custom Song Singing and animation mode
 
 ---
 
@@ -492,57 +494,59 @@ You can tweak this to reflect a different vibe: poetic, mystical, overly formal,
 
 ### Custom Songs
 
-Billy supports a "song mode" where he performs coordinated audio + motion playback using a structured folder:
+Billy supports a "song mode" where he performs coordinated audio + motion playback. You can manage custom songs directly through the **Web UI** by clicking the **Songs** button in the header.
+
+#### Using the Song Manager
+
+1. **Access the Song Manager**: Click the **Songs** button (🎵) in the web UI header
+
+2. **Copy Example Song**: Click "Copy Example" to create a template song in your `custom_songs/` directory
+
+3. **Create or Edit a Song**:
+   - Click a song to edit it, or create a new one
+   - Upload audio files:
+     - `full.wav` - Main audio (played to speakers)
+     - `vocals.wav` - Audio used to flap the mouth (lip sync)
+     - `drums.wav` - Audio used to flap the tail (based on RMS)
+   - Configure playback settings:
+     - **Title**: Display name for the song
+     - **Keywords**: Words Billy should recognize to trigger this song
+     - **BPM**: Tempo used to synchronize timing
+     - **Gain**: Volume multiplier for audio intensity
+     - **Tail Threshold**: RMS threshold for tail movement (increase if tail flaps too little, decrease if too much)
+     - **Compensate Tail**: Offset in beats to compensate tail latency (0-1, fraction of beat length)
+     - **Head Moves**: Comma-separated list of `time:duration` values (e.g., `4.0:1,8.0:0,12.0:1`)
+     - **Half Tempo Tail Flap**: Toggle to flap tail on every 2nd beat
+
+4. **Preview Audio**: Use the play buttons to preview each audio file before saving
+
+5. **Save**: Click "Save Song" to store your configuration
+
+#### Audio File Requirements
+
+- **Format**: WAV files at 48 kHz, 16-bit, Stereo
+- **Splitting**: Use an AI tool like [Vocal Remover](https://vocalremover.org/) to split your song into separate stems
+
+#### File Structure
+
+Songs are stored in `./custom_songs/your_song_name/`:
 
 ```bash
-./sounds/songs/your_song_name/
-├── full.wav      # Main audio (played to speakers)
-├── vocals.wav    # Audio used to flap the mouth (lip sync)
-├── drums.wav     # Audio used to flap the tail (based on RMS)
-├── metadata.txt  # Optional: timing & motion config
+./custom_songs/your_song_name/
+├── full.wav       # Main audio (played to speakers)
+├── vocals.wav     # Audio used to flap the mouth (lip sync)
+├── drums.wav      # Audio used to flap the tail (based on RMS)
+└── metadata.ini   # Playback configuration
 ```
-
-To add a song:
-
-1. Split your desired song (with an ai tool like [Vocal Remover and Isolation](https://vocalremover.org/)) into separate stems for vocal, music and drums.
-
-2. Create a new subfolder inside `./sounds/songs/` with your song name
-
-3. Include at minimum:
-
-- `full.wav` the song to play
-- `vocals.wav` the isolated vocals or melody track
-- `drums.wav` a beat track used for tail flapping
-
-4. (Optional) Create a `metadata.txt` to fine-tune movement timing.
-
-#### `metadata.txt` Format
-
-```ini
-gain=1.0
-bpm=120
-tail_threshold=1500
-compensate_tail=0.2
-half_tempo_tail_flap=false
-head_moves=4.0:1,8.0:0,12.0:1
-```
-
-**gain**: multiplier for audio intensity  
-**bpm**: tempo used to synchronize timing  
-**tail_threshold**: RMS threshold for tail movement (increase/decrease value when tail flaps too little/much)  
-**compensate_tail**: offset in beats to compensate tail latency  
-**half_tempo_tail_flap**: if true, flaps tail on every 2nd beat  
-**head_moves**: comma-separated list of `beat:duration` values  
-  → At beat `2`, move head for `2.0s`, at `29.5`, move for `2.0s`, etc.  
 
 #### Triggering a Song in Conversation
 
 Billy supports function-calling to start a song. Just say something like:
 
-- “Can you play the *River Groove*?”
-- “Sing the *Tuna Tango* song.”
+- "Can you play *Fishsticks*?"
+- "Sing the *River Groove* song."
 
-If the folder exists it will play the contents with full animation.
+If a song with that name or title exists, Billy will play it with full animation.
 
 ---
 
@@ -633,6 +637,6 @@ Pull requests are welcome! If you have an idea for a new feature, bug fix, or im
 
 Enjoying the project? Feel free to leave a small tip, totally optional, but much appreciated!
 
-![Paypal](./docs/images/qrcode.png)
+![Paypal](./webconfig/static/images/qrcode.png)
 
 https://paypal.me/thomkoopman050

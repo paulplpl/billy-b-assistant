@@ -44,6 +44,7 @@ CONFIG_KEYS = [
     "LOG_LEVEL",
     "DEFAULT_USER",
     "CURRENT_USER",
+    "SHOW_RC_VERSIONS",
 ]
 
 

@@ -290,3 +290,49 @@ def export_persona():
         download_name="persona.ini",
         mimetype="text/plain",
     )
+
+
+@bp.route('/persona/presets', methods=['GET'])
+def get_persona_presets():
+    """Get list of available persona preset templates."""
+    try:
+        from core.persona_manager import persona_manager
+
+        presets = persona_manager.get_persona_presets()
+        return jsonify(presets)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/persona/create-from-preset', methods=['POST'])
+def create_persona_from_preset():
+    """Create a new persona from a persona preset template."""
+    try:
+        data = request.get_json()
+        preset_id = data.get('preset_id')
+        persona_name = data.get('persona_name')
+
+        if not preset_id or not persona_name:
+            return jsonify({"error": "preset_id and persona_name are required"}), 400
+
+        # Clean the persona name for folder name: lowercase and remove special characters
+        import re
+
+        clean_name = re.sub(r'[^a-z0-9\-_]', '', persona_name.strip().lower())
+
+        if not clean_name:
+            return jsonify({"error": "Invalid persona name"}), 400
+
+        from core.persona_manager import persona_manager
+
+        # Pass both the original name (for display) and clean name (for folder)
+        success = persona_manager.create_persona_from_preset(
+            preset_id, clean_name, display_name=persona_name.strip()
+        )
+
+        if success:
+            return jsonify({"status": "ok", "persona_name": clean_name})
+        return jsonify({"error": "Failed to create persona from preset"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

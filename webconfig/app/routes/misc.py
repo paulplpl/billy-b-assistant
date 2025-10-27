@@ -118,11 +118,32 @@ def service_status():
             except Exception as e:
                 print(f"Failed to get config hash: {e}")
 
+            # Get current personality traits
+            current_personality = None
+            try:
+                from core.config import PERSONALITY
+
+                current_personality = {
+                    "humor": PERSONALITY.humor,
+                    "sarcasm": PERSONALITY.sarcasm,
+                    "honesty": PERSONALITY.honesty,
+                    "respectfulness": PERSONALITY.respectfulness,
+                    "optimism": PERSONALITY.optimism,
+                    "confidence": PERSONALITY.confidence,
+                    "warmth": PERSONALITY.warmth,
+                    "curiosity": PERSONALITY.curiosity,
+                    "verbosity": PERSONALITY.verbosity,
+                    "formality": PERSONALITY.formality,
+                }
+            except Exception as e:
+                print(f"Failed to get current personality: {e}")
+
             return jsonify({
                 "status": service_status,
                 "current_user": current_user_name,
                 "current_user_loaded": current_user.name if current_user else None,
                 "current_persona": persona_manager.current_persona,
+                "current_personality": current_personality,
                 "available_profiles": user_manager.list_all_users(),
                 "available_personas": persona_manager.get_available_personas(),
                 "memory_count": memory_count,

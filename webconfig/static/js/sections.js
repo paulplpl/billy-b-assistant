@@ -5,6 +5,11 @@ const Sections = (() => {
             const header = section.querySelector('h3');
             if (!header) return;
 
+            // Skip if already initialized to prevent duplicate event listeners
+            if (header.hasAttribute('data-collapsible-initialized')) {
+                return;
+            }
+
             // Look for existing expand_more icon first
             let icon = header.querySelector('.material-icons:last-child');
             if (!icon || icon.textContent !== 'expand_more') {
@@ -62,6 +67,9 @@ const Sections = (() => {
                     }
                 }
             });
+            
+            // Mark as initialized AFTER everything is set up
+            header.setAttribute('data-collapsible-initialized', 'true');
         });
     }
 

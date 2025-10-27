@@ -1,5 +1,6 @@
 // ===================== CONSOLIDATED POLLING =====================
 let lastKnownPersona = null;
+let lastKnownPersonality = null;
 let isInitialLoad = true;
 
 const startConsolidatedPolling = () => {
@@ -18,6 +19,16 @@ const startConsolidatedPolling = () => {
                     window.PersonaForm.handlePersonaChangeNotification(status.current_persona);
                 }
                 lastKnownPersona = status.current_persona;
+                isInitialLoad = false;
+            }
+            
+            // Handle personality changes
+            if (status.current_personality && JSON.stringify(status.current_personality) !== JSON.stringify(lastKnownPersonality)) {
+                // Only trigger notification if this is not the initial load
+                if (!isInitialLoad && window.PersonaForm && window.PersonaForm.handlePersonalityChange) {
+                    window.PersonaForm.handlePersonalityChange(status.current_personality);
+                }
+                lastKnownPersonality = status.current_personality;
                 isInitialLoad = false;
             }
             
@@ -79,6 +90,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     Sections.collapsible();
     ReleaseNotes.init();
+    SongsManager.init();
+    
+    // Initialize Create Persona Modal
+    if (window.PersonaForm && window.PersonaForm.initCreatePersonaModal) {
+        window.PersonaForm.initCreatePersonaModal();
+    }
 });
 
 

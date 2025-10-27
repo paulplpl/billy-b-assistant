@@ -32,8 +32,17 @@ TOOL_INSTRUCTIONS = """
 === SPECIAL POWERS ===
 
 PERSONALITY MANAGEMENT:
-- Use `update_personality` to adjust traits when requested
-- Examples: "Be more funny", "Be less sarcastic", "Be more confident"
+- **MANDATORY**: Use `update_personality` when users request personality changes
+- **ALWAYS CALL THE FUNCTION** before responding with speech
+- Accept both percentage values (0-100) and descriptive levels (min/low/med/high/max)
+- Examples:
+  * "Set humor to 50%" → update_personality({"humor": 50})
+  * "Be more funny" → update_personality({"humor": 80})
+  * "Make me less sarcastic" → update_personality({"sarcasm": 20})
+  * "Increase confidence" → update_personality({"confidence": 90})
+  * "Be more formal" → update_personality({"formality": 80})
+  * "Set warmth to high" → update_personality({"warmth": "high"})
+- Available traits: humor, sarcasm, honesty, respectfulness, optimism, confidence, warmth, curiosity, verbosity, formality
 
 SMART HOME CONTROL:
 - For lights/devices/climate/scenes, call `smart_home_command` with the full user request
@@ -57,13 +66,21 @@ USER SYSTEM:
 - Identity: "I am a teacher", "I'm vegetarian" → store_memory(memory="is a teacher", importance="high", category="fact")
 - Hobbies: "I play guitar", "I do yoga" → store_memory(memory="plays guitar", importance="medium", category="interest")
 
-**EXAMPLE FLOW:**
+**EXAMPLE FLOWS:**
+
+MEMORY STORAGE:
 User: "I like to eat kebabs"
 1. FIRST: Call store_memory(memory="likes kebabs", importance="medium", category="preference")
 2. THEN: Respond with speech
 
 Categories: preference (likes/dislikes), fact (personal info), event (happenings), relationship (people), interest (hobbies)
 Importance: high (critical info), medium (useful info), low (casual mentions)
+
+PERSONALITY CHANGE:
+User: "Set your humor to 50%"
+1. FIRST: Call update_personality({"humor": 50})
+2. THEN: Respond with speech acknowledging the change
+
 
 ENTERTAINMENT:
 - Use `play_song` for special songs
@@ -75,9 +92,10 @@ RESPONSE DECISION TREE:
 1. If user introduces themselves → call `identify_user`
 2. If user shares personal info → call `store_memory`
 3. If user asks about home automation → call `smart_home_command`
-4. If user requests personality change → call `update_personality`
+4. **If user requests personality change → MANDATORY: call `update_personality` FIRST, then respond**
 5. If user requests song → call `play_song`
 6. Always end with `follow_up_intent`
+
 
 USER RECOGNITION:
 - ALWAYS call `identify_user` at conversation start
@@ -199,6 +217,7 @@ ALLOW_UPDATE_PERSONALITY_INI = (
 FLASK_PORT = int(os.getenv("FLASK_PORT", "80"))
 SHOW_SUPPORT = os.getenv("SHOW_SUPPORT", True)
 FORCE_PASS_CHANGE = os.getenv("FORCE_PASS_CHANGE", "false").lower() == "true"
+SHOW_RC_VERSIONS = os.getenv("SHOW_RC_VERSIONS", "False")
 
 # === User Profile Config ===
 DEFAULT_USER = os.getenv("DEFAULT_USER", "guest").strip()
