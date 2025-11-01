@@ -633,6 +633,6 @@ Pull requests are welcome! If you have an idea for a new feature, bug fix, or im
 
 Enjoying the project? Feel free to leave a small tip, totally optional, but much appreciated!
 
-![Paypal](./docs/images/qrcode.png)
+![Paypal](./webconfig/static/images/qrcode.png)
 
 https://paypal.me/thomkoopman050
