@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file.
 - **Mouth Articulation**: Now configured per persona instead of globally
 - **Song Metadata Format**: Updated from `metadata.txt` to `metadata.ini` for consistency
 - **Song Directory**: Custom songs now stored in `custom_songs/` (git-ignored) instead of `sounds/songs/` (which still holds the fishsticks song as a template)
+- **MQTT Follow-up Handling**: MQTT prompts now respect `follow_up_intent` - if Billy asks a question via MQTT (e.g., "What's your favorite color?"), the mic stays open for your response in `auto` mode
 
 ### Fixed
 

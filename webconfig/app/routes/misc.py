@@ -49,6 +49,26 @@ def restart_billy_services():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+@bp.route('/restart-billy', methods=['POST'])
+def restart_billy_only():
+    """Restart only billy.service (not the webconfig), used for persona changes."""
+    try:
+        subprocess.Popen(["sudo", "systemctl", "restart", "billy.service"])
+        return jsonify({"status": "ok", "message": "Restarting Billy service..."})
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@bp.route('/stop-billy', methods=['POST'])
+def stop_billy_only():
+    """Stop only billy.service (not the webconfig), used for audio tests."""
+    try:
+        subprocess.Popen(["sudo", "systemctl", "stop", "billy.service"])
+        return jsonify({"status": "ok", "message": "Stopping Billy service..."})
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
 @bp.route("/service/status")
 def service_status():
     try:

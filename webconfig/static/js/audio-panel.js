@@ -17,7 +17,7 @@ const AudioPanel = (() => {
                 showNotification("🛑 Stopping Billy service for speaker test...", "warning");
                 
                 // Stop the Billy service
-                const stopResponse = await fetch("/restart", {method: "POST"});
+                const stopResponse = await fetch("/stop-billy", {method: "POST"});
                 if (!stopResponse.ok) {
                     throw new Error("Failed to stop Billy service");
                 }
@@ -50,7 +50,7 @@ const AudioPanel = (() => {
             if (serviceWasRunning) {
                 try {
                     showNotification("🔄 Restarting Billy service...", "warning");
-                    await fetch("/restart", {method: "POST"});
+                    await fetch("/restart-billy", {method: "POST"});
                     showNotification("✅ Billy service restarted", "success");
                     ServiceStatus.fetchStatus();
                 } catch (err) {
@@ -65,7 +65,7 @@ const AudioPanel = (() => {
                 
                 if (serviceWasRunning) {
                     showNotification("🛑 Stopping Billy service for mic test...", "warning");
-                    await fetch("/restart", {method: "POST"});
+                    await fetch("/stop-billy", {method: "POST"});
                     // Wait a moment for the service to stop
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     showNotification("✅ Billy service stopped. Starting mic test...", "success");

@@ -1338,7 +1338,7 @@ class UserProfilePanel {
                         this.showNotification('🔄 Restarting Billy to load new persona...', 'warning');
                         // Wait a moment to ensure profile is written to disk
                         await new Promise(resolve => setTimeout(resolve, 500));
-                        await fetch('/restart', { method: 'POST' });
+                        await fetch('/restart-billy', { method: 'POST' });
                         // Wait a moment for the service to restart
                         await new Promise(resolve => setTimeout(resolve, 2000));
                         this.showNotification('✅ Billy restarted with new persona', 'success');
@@ -1403,7 +1403,7 @@ class UserProfilePanel {
                     this.showNotification('🔄 Restarting Billy to load new persona...', 'warning');
                     // Wait a moment to ensure profile is written to disk
                     await new Promise(resolve => setTimeout(resolve, 500));
-                    await fetch('/restart', { method: 'POST' });
+                    await fetch('/restart-billy', { method: 'POST' });
                     // Wait a moment for the service to restart
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     this.showNotification('✅ Billy restarted with new persona', 'success');

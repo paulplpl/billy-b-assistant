@@ -139,8 +139,8 @@ const SettingsForm = (() => {
                 }
             } catch (error) {
                 console.error("Auto-refresh failed, falling back to restart:", error);
-                // Fallback to restart if auto-refresh fails
-                await fetch("/restart", {method: "POST"});
+                // Fallback to restart Billy service if auto-refresh fails
+                await fetch("/restart-billy", {method: "POST"});
                 showNotification("Settings saved – Billy restarted", "success");
             }
 
