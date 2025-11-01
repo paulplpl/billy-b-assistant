@@ -229,6 +229,10 @@ def update_current_user():
             preferred_persona = data.get("preferred_persona")
             if preferred_persona:
                 current_user.set_preferred_persona(preferred_persona)
+                # Also switch the persona manager to the new persona
+                from core.persona_manager import persona_manager
+
+                persona_manager.switch_persona(preferred_persona)
                 return jsonify({
                     "message": f"Updated {current_user.name}'s preferred persona to {preferred_persona}"
                 })
@@ -241,6 +245,10 @@ def update_current_user():
 
             if preferred_persona:
                 current_user.set_preferred_persona(preferred_persona)
+                # Also switch the persona manager to the new persona
+                from core.persona_manager import persona_manager
+
+                persona_manager.switch_persona(preferred_persona)
 
             if display_name:
                 current_user.set_display_name(display_name)
@@ -500,6 +508,10 @@ def update_display_name():
 
         if not user:
             return jsonify({"error": "User is required"}), 400
+
+        # Prevent editing Guest profile display name
+        if user.lower() == 'guest':
+            return jsonify({"error": "Cannot edit Guest profile display name"}), 400
 
         profile_file = get_profiles_dir() / f"{user.lower()}.ini"
         print(f"DEBUG: update_display_name - profile_file: {profile_file}")

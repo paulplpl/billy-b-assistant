@@ -121,19 +121,37 @@ def service_status():
             # Get current personality traits
             current_personality = None
             try:
-                from core.config import PERSONALITY
+                # Reload personality from disk to get latest changes from Billy
+                from core.persona import load_traits_from_ini
+
+                # Get current persona file path
+                current_persona = persona_manager.current_persona
+                if current_persona == "default":
+                    persona_ini_path = os.path.join(project_root, "persona.ini")
+                else:
+                    persona_ini_path = os.path.join(
+                        project_root, "personas", current_persona, "persona.ini"
+                    )
+                    if not os.path.exists(persona_ini_path):
+                        # Fall back to old structure
+                        persona_ini_path = os.path.join(
+                            project_root, "personas", f"{current_persona}.ini"
+                        )
+
+                # Load fresh traits from the file
+                traits = load_traits_from_ini(persona_ini_path)
 
                 current_personality = {
-                    "humor": PERSONALITY.humor,
-                    "sarcasm": PERSONALITY.sarcasm,
-                    "honesty": PERSONALITY.honesty,
-                    "respectfulness": PERSONALITY.respectfulness,
-                    "optimism": PERSONALITY.optimism,
-                    "confidence": PERSONALITY.confidence,
-                    "warmth": PERSONALITY.warmth,
-                    "curiosity": PERSONALITY.curiosity,
-                    "verbosity": PERSONALITY.verbosity,
-                    "formality": PERSONALITY.formality,
+                    "humor": traits.get("humor", 50),
+                    "sarcasm": traits.get("sarcasm", 50),
+                    "honesty": traits.get("honesty", 50),
+                    "respectfulness": traits.get("respectfulness", 50),
+                    "optimism": traits.get("optimism", 50),
+                    "confidence": traits.get("confidence", 50),
+                    "warmth": traits.get("warmth", 50),
+                    "curiosity": traits.get("curiosity", 50),
+                    "verbosity": traits.get("verbosity", 50),
+                    "formality": traits.get("formality", 50),
                 }
             except Exception as e:
                 print(f"Failed to get current personality: {e}")
@@ -284,3 +302,44 @@ def change_password():
 
     except Exception as e:
         return jsonify({"status": "error", "error": f"Unexpected error: {str(e)}"}), 500
+
+
+@bp.route("/test-motor", methods=["POST"])
+def test_motor():
+    """Test individual motors (mouth, head, or tail)."""
+    try:
+        import time
+
+        # Stop Billy service if running (to release GPIO)
+        was_active = False
+        try:
+            output = subprocess.check_output(
+                ["systemctl", "is-active", "billy.service"], stderr=subprocess.STDOUT
+            )
+            was_active = output.decode().strip() == "active"
+        except subprocess.CalledProcessError:
+            was_active = False
+
+        if was_active:
+            subprocess.check_call(["sudo", "systemctl", "stop", "billy.service"])
+
+        data = request.get_json()
+        motor = data.get("motor")
+
+        import core.movements as movements
+
+        # Perform the requested test
+        if motor == "mouth":
+            movements.move_mouth(100, 1, brake=True)
+        elif motor == "head":
+            movements.move_head("on")
+            time.sleep(1)
+            movements.move_head("off")
+        elif motor == "tail":
+            movements.move_tail(duration=1)
+        else:
+            return jsonify({"error": "Invalid motor"}), 400
+
+        return jsonify({"status": f"{motor} tested", "service_was_active": was_active})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

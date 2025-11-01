@@ -4,13 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.0.0] — 2025-10-26
+## [2.0.0] — 2025-11-02
 >### 🎉 Major New Features:
 > **User Profiles with memories - Multiple Personas - Custom Song Manager**
 
 ### Added
 
-- **User Profiles**: Billy now recognizes individual users with their own profiles, display names, interaction history, preferred personas, and context-aware greetings
+- **User Profiles**: Billy now identifies users when they introduce themselves (e.g., "Hi Billy, it's Thom")
   - Create/switch profiles, set display names, guest mode
   - Import/export profiles
   - Profile-specific statistics like interaction count and last seen timestamps

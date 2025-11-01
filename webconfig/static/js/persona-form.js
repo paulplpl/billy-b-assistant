@@ -113,18 +113,18 @@ const PersonaForm = (() => {
         
         // Helper functions for level management
         const getLevel = (val) => {
-            if (val < 10) return "min";
-            if (val < 30) return "low";
-            if (val < 70) return "med";
-            if (val < 90) return "high";
+            if (val < 15) return "min";
+            if (val < 35) return "low";
+            if (val < 65) return "med";
+            if (val < 85) return "high";
             return "max";
         };
         
         const getLevelColor = (val) => {
-            if (val < 10) return "text-red-400";
-            if (val < 30) return "text-orange-400";
-            if (val < 70) return "text-yellow-400";
-            if (val < 90) return "text-green-400";
+            if (val < 15) return "text-red-400";
+            if (val < 35) return "text-orange-400";
+            if (val < 65) return "text-yellow-400";
+            if (val < 85) return "text-green-400";
             return "text-emerald-400";
         };
 
@@ -148,11 +148,11 @@ const PersonaForm = (() => {
 
             // Define the 5 levels
             const levels = [
-                { name: 'min', range: [0, 9], color: 'bg-red-500' },
-                { name: 'low', range: [10, 29], color: 'bg-orange-500' },
-                { name: 'med', range: [30, 69], color: 'bg-yellow-500' },
-                { name: 'high', range: [70, 89], color: 'bg-emerald-500' },
-                { name: 'max', range: [90, 100], color: 'bg-violet-500' }
+                { name: 'min', range: [0, 14], color: 'bg-red-500' },
+                { name: 'low', range: [15, 34], color: 'bg-orange-500' },
+                { name: 'med', range: [35, 64], color: 'bg-yellow-500' },
+                { name: 'high', range: [65, 84], color: 'bg-emerald-500' },
+                { name: 'max', range: [85, 100], color: 'bg-violet-500' }
             ];
 
             // Remove numeric display - no longer showing 0-100 values
@@ -631,12 +631,15 @@ const PersonaForm = (() => {
                     currentPersona = selectedRow.getAttribute('data-persona');
                 }
                 
-                // Fallback to user's preferred persona or default for guest mode
+                // Fallback to user's preferred persona or current persona for guest mode
                 if (!currentPersona) {
-                    if (configData && configData.CURRENT_USER && typeof configData.CURRENT_USER === 'object' && configData.CURRENT_USER.data && configData.CURRENT_USER.data.USER_INFO) {
+                    // First try to get from CURRENT_PERSONA (works for both guest and user mode)
+                    if (configData && configData.CURRENT_PERSONA) {
+                        currentPersona = configData.CURRENT_PERSONA;
+                    } else if (configData && configData.CURRENT_USER && typeof configData.CURRENT_USER === 'object' && configData.CURRENT_USER.data && configData.CURRENT_USER.data.USER_INFO) {
                         currentPersona = configData.CURRENT_USER.data.USER_INFO.preferred_persona || 'default';
                     } else {
-                        // Guest mode or no current user - use default persona
+                        // Final fallback
                         currentPersona = 'default';
                     }
                 }
@@ -1125,32 +1128,9 @@ const PersonaForm = (() => {
         // Update the UI to reflect personality trait changes
         debugLog('INFO', 'Personality traits changed:', personalityTraits);
         
-        // Update personality sliders if they exist
-        Object.entries(personalityTraits).forEach(([trait, value]) => {
-            const slider = document.getElementById(trait);
-            if (slider) {
-                slider.value = value;
-                // Update any associated display elements
-                const valueDisplay = document.getElementById(`${trait}-value`);
-                if (valueDisplay) {
-                    valueDisplay.textContent = value;
-                }
-                // Update any associated progress bars
-                const progressBar = document.getElementById(`${trait}-bar`);
-                if (progressBar) {
-                    const percent = (value / 100) * 100;
-                    progressBar.style.width = `${percent}%`;
-                }
-            }
-        });
-        
-        // Show a subtle notification that personality was updated
-        if (window.showNotification) {
-            const changedTraits = Object.entries(personalityTraits)
-                .map(([trait, value]) => `${trait}: ${value}%`)
-                .join(', ');
-            window.showNotification(`Personality updated: ${changedTraits}`, 'info');
-        }
+        // Re-render the personality sliders with the new values
+        // This updates the custom block sliders to reflect changes made via voice commands
+        renderPersonalitySliders(personalityTraits);
     };
 
     // Create Persona Modal Functions

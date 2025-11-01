@@ -83,6 +83,51 @@ def delete_persona(persona_name):
         return jsonify({"error": str(e)}), 500
 
 
+@bp.route("/persona/switch", methods=["POST"])
+def switch_persona():
+    """Switch to a different persona (works in guest mode too)."""
+    try:
+        from core.persona_manager import persona_manager
+        from core.profile_manager import user_manager
+
+        data = request.json
+        persona_name = data.get("persona_name")
+
+        if not persona_name:
+            return jsonify({"error": "persona_name is required"}), 400
+
+        # Validate persona exists
+        available_personas = [
+            p["name"] for p in persona_manager.get_available_personas()
+        ]
+        if persona_name not in available_personas:
+            return jsonify({"error": f"Persona '{persona_name}' not found"}), 404
+
+        # Switch persona manager to new persona
+        persona_manager.switch_persona(persona_name)
+
+        # If there's a current user (not guest), also update their preferred persona
+        current_user = user_manager.get_current_user()
+        if current_user:
+            current_user.set_preferred_persona(persona_name)
+        else:
+            # Guest mode: save the preferred persona to the guest profile
+            try:
+                guest_profile = user_manager.identify_user("guest", "high")
+                if guest_profile:
+                    guest_profile.set_preferred_persona(persona_name)
+            except Exception as e:
+                print(f"Failed to save guest persona preference: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": f"Switched to {persona_name} persona",
+            "persona_name": persona_name,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route("/persona", methods=["POST"])
 def save_persona():
     data = request.json

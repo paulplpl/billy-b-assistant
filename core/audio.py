@@ -352,16 +352,35 @@ def play_random_wake_up_clip():
 
     # Track how many tasks were pending before enqueue
     already_pending = playback_queue.unfinished_tasks
+    logger.info(
+        f"🔧 Enqueuing wake-up clip: {os.path.basename(clip)}, already_pending={already_pending}",
+        "🔧",
+    )
 
     # Enqueue the WAV file
     enqueue_wav_to_playback(clip)
 
+    # Give the queue a moment to register the new tasks
+    time.sleep(0.05)
+
+    new_tasks = playback_queue.unfinished_tasks
+    logger.info(
+        f"🔧 After enqueue: unfinished_tasks={new_tasks} (added {new_tasks - already_pending} chunks)",
+        "🔧",
+    )
+
     # Wait for exactly those new chunks to finish
+    # Use a minimum wait to ensure at least some playback happens
+    start_time = time.time()
     while playback_queue.unfinished_tasks > already_pending:
         time.sleep(0.01)
 
+    elapsed = time.time() - start_time
+    logger.info(f"🔧 Wake-up sound playback completed in {elapsed:.2f}s", "🔧")
+
     # Once done, set the event
     playback_done_event.set()
+    logger.info("🔧 playback_done_event SET (wake-up sound finished)", "🔧")
 
     return clip
 

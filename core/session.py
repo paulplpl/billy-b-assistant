@@ -25,6 +25,7 @@ from .config import (
     SERVER_VAD_PARAMS,
     SILENCE_THRESHOLD,
     TEXT_ONLY_MODE,
+    TOOL_INSTRUCTIONS,
     TURN_EAGERNESS,
 )
 from .ha import send_conversation_prompt
@@ -60,18 +61,68 @@ def get_instructions_with_user_context():
 
     # Modify instructions based on guest mode
     if current_user_env and current_user_env.lower() == "guest":
-        # Guest mode - modify instructions to not try to identify users
+        # Guest mode - use guest's preferred persona
         logger.info(
             "🔧 get_instructions_with_user_context: Using guest mode instructions", "🔧"
         )
-        # In guest mode, use default persona traits (no need to modify personality section)
+
+        # Get guest's preferred persona from persona manager
+        current_persona_name = persona_manager.current_persona
+        logger.info(f"🔧 Guest mode - loading persona: {current_persona_name}", "🔧")
+
+        persona_instructions = persona_manager.get_persona_instructions(
+            current_persona_name
+        )
+        current_persona_data = persona_manager.load_persona(current_persona_name)
+
+        if current_persona_data and persona_instructions:
+            # Use persona instructions as the base
+            current_instructions = f"""
+# Role & Objective
+{persona_instructions}
+---
+# Tools
+{TOOL_INSTRUCTIONS.strip()}
+---
+# Personality & Tone
+YOUR BEHAVIOR IS GOVERNED BY PERSONALITY TRAITS WITH FIVE LEVELS: MIN, LOW, MED, HIGH, MAX.
+MIN = TRAIT IS MUTED. MAX = TRAIT IS EXAGGERATED.
+THESE TRAITS GUIDE YOUR BEHAVIORAL EXPRESSION. FOLLOW THESE RULES STRICTLY:"""
+
+            # Add personality traits if available
+            if current_persona_data.get('personality'):
+                from .persona import PersonaProfile
+
+                temp_personality = PersonaProfile()
+                for trait, value in current_persona_data['personality'].items():
+                    if hasattr(temp_personality, trait):
+                        setattr(temp_personality, trait, int(value))
+
+                current_instructions += "\n" + temp_personality.generate_prompt()
+
+            # Add backstory if available
+            if current_persona_data.get('backstory'):
+                backstory_parts = []
+                for key, value in current_persona_data['backstory'].items():
+                    backstory_parts.append(f"- {key}: {value}")
+                current_persona_backstory = "\n".join(backstory_parts)
+
+                current_instructions += f"""
+---
+# Context (backstory)
+Use your backstory to inspire jokes, metaphors, or occasional references in conversation, staying consistent with your personality.
+{current_persona_backstory}"""
+
+            return current_instructions
+        # Fallback to default instructions with guest mode modifications
         return INSTRUCTIONS.replace(
             "USER RECOGNITION: ALWAYS call `identify_user` at conversation start. Greet users by name when known.",
-            "GUEST MODE: You are in guest mode. If someone introduces themselves (e.g., 'Hey billy it is tom', 'I am Tom', 'My name is Sarah'), you MUST IMMEDIATELY call `identify_user` tool BEFORE responding. This switches you to user mode. Otherwise treat everyone as a guest visitor.",
+            "GUEST MODE: You are in guest mode. Only call `identify_user` if someone explicitly introduces themselves with clear name patterns like 'I am [Name]', 'My name is [Name]', 'Hey billy it is [Name]', or 'This is [Name]'. Do NOT call `identify_user` for greetings like 'Hello', 'Hi', or casual conversation. Otherwise treat everyone as a guest visitor.",
         ).replace(
             "USER SYSTEM:\n- IDENTIFICATION: When you recognize a user's voice/name, call `identify_user` with name and confidence (high/medium/low). Respond with personalized greeting after.\n- MEMORY: Call `store_memory` when users share personal info. Categories: preference/fact/event/relationship/interest. Importance: high/medium/low.\n- PERSONA: Use `manage_profile` with action=\"switch_persona\" for different personalities.",
             "USER SYSTEM: Limited in guest mode - only `identify_user` available. After identification, ALWAYS call `store_memory` when users share personal info. Be proactive - don't wait for them to ask.\n\nMEMORY STORAGE TRIGGERS:\nCall `store_memory` for ANY of these patterns:\n- \"I like/love/enjoy/hate/dislike [something]\"\n- \"I have/own/possess [something]\"\n- \"I work as/at [something]\"\n- \"I live in/at [somewhere]\"\n- \"I am [something]\"\n- \"My favorite [something] is [something]\"\n- \"I prefer [something]\"\n- \"I'm interested in [something]\"\n- \"I'm from [somewhere]\"\n- \"I do [activity/hobby]\"\n\nCategories: preference/fact/event/relationship/interest\nImportance: high/medium/low (use \"high\" for explicitly important info)",
         )
+
     if current_user:
         # User mode - add user context
         user_context = current_user.get_context_string()
@@ -91,10 +142,21 @@ def get_instructions_with_user_context():
 
         # Get current persona's personality traits and backstory
         current_persona_data = persona_manager.load_persona(preferred_persona)
-        if current_persona_data:
-            current_instructions = INSTRUCTIONS
+        if current_persona_data and persona_instructions:
+            # Use persona instructions as the base instead of main INSTRUCTIONS
+            current_instructions = f"""
+# Role & Objective
+{persona_instructions}
+---
+# Tools
+{TOOL_INSTRUCTIONS.strip()}
+---
+# Personality & Tone
+YOUR BEHAVIOR IS GOVERNED BY PERSONALITY TRAITS WITH FIVE LEVELS: MIN, LOW, MED, HIGH, MAX.
+MIN = TRAIT IS MUTED. MAX = TRAIT IS EXAGGERATED.
+THESE TRAITS GUIDE YOUR BEHAVIORAL EXPRESSION. FOLLOW THESE RULES STRICTLY:"""
 
-            # Replace personality traits if available
+            # Add personality traits if available
             if current_persona_data.get('personality'):
                 # Create a temporary personality object with current persona's traits
                 from .persona import PersonaProfile
@@ -104,12 +166,10 @@ def get_instructions_with_user_context():
                     if hasattr(temp_personality, trait):
                         setattr(temp_personality, trait, int(value))
 
-                # Replace the personality section in instructions with current persona's traits
-                current_instructions = current_instructions.replace(
-                    PERSONALITY.generate_prompt(), temp_personality.generate_prompt()
-                )
+                # Add the personality section
+                current_instructions += "\n" + temp_personality.generate_prompt()
 
-            # Replace backstory if available
+            # Add backstory if available
             if current_persona_data.get('backstory'):
                 # Format current persona's backstory
                 backstory_parts = []
@@ -117,24 +177,16 @@ def get_instructions_with_user_context():
                     backstory_parts.append(f"- {key}: {value}")
                 current_persona_backstory = "\n".join(backstory_parts)
 
-                # Replace the backstory section in instructions with current persona's backstory
-                from .config import BACKSTORY_FACTS
-
-                current_instructions = current_instructions.replace(
-                    BACKSTORY_FACTS, current_persona_backstory
-                )
+                current_instructions += f"""
+                ---
+                # Context (backstory)
+                Use your backstory to inspire jokes, metaphors, or occasional references in conversation, staying consistent with your personality.
+                {current_persona_backstory}"""
         else:
+            # Fall back to default instructions if no persona data
             current_instructions = INSTRUCTIONS
 
-        if persona_instructions:
-            persona_section = f"""
----
-# Active Persona
-{persona_instructions}"""
-        else:
-            persona_section = ""
-
-        return current_instructions + user_section + persona_section
+        return current_instructions + user_section
     # No user loaded - use default instructions
     return INSTRUCTIONS
 
@@ -386,6 +438,11 @@ class BillySession:
         self._waiting_for_name_after_denial = False
         self._added_done_text = False
 
+        # Flags for logging mic state (reset for each session)
+        self._mic_data_started = False
+        self._logged_mic_blocked_1 = False
+        self._logged_waiting_for_wakeup = False
+
     # ---- Websocket helpers ---------------------------------------------
     async def _ws_send_json(self, payload: dict[str, Any]):
         """Send a JSON payload over the session websocket with locking.
@@ -513,7 +570,9 @@ class BillySession:
                 "🧭",
             )
 
-    async def _handle_update_personality(self, raw_args: str | None):
+    async def _handle_update_personality(
+        self, raw_args: str | None, call_id: str | None = None
+    ):
         args = json.loads(raw_args or "{}")
         changes = []
 
@@ -538,11 +597,11 @@ class BillySession:
 
         # Level to numeric value mapping
         level_to_value = {
-            'min': 4,  # middle of 0-9 range
-            'low': 19,  # middle of 10-29 range
-            'med': 49,  # middle of 30-69 range
-            'high': 79,  # middle of 70-89 range
-            'max': 95,  # middle of 90-100 range
+            'min': 7,  # middle of 0-14 range
+            'low': 24,  # middle of 15-34 range
+            'med': 49,  # middle of 35-64 range
+            'high': 74,  # middle of 65-84 range
+            'max': 92,  # middle of 85-100 range
         }
 
         for trait, val in args.items():
@@ -573,6 +632,32 @@ class BillySession:
             self.full_response_text = ""
             self.last_activity[0] = time.time()
 
+            # First, send function_call_output to close the update_personality function
+            if call_id:
+                logger.info(
+                    f"🔧 Sending function_call_output for update_personality (call_id={call_id})",
+                    "🔧",
+                )
+                changes_summary = ", ".join([
+                    f"{trait}={PERSONALITY._bucket(val).upper()}"
+                    for trait, val in changes
+                ])
+                await self._ws_send_json({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps({
+                            "status": "success",
+                            "changes": changes_summary,
+                        }),
+                    },
+                })
+                # Small delay to ensure function output is processed
+                await asyncio.sleep(0.1)
+
+            # Then send confirmation message to prompt Billy to speak
+            # OpenAI will automatically generate a response after function_call_output + user message
             confirmation_text = " ".join([
                 f"Okay, {trait} is now set to {PERSONALITY._bucket(val).upper()}."
                 for trait, val in changes
@@ -585,7 +670,7 @@ class BillySession:
                     "content": [{"type": "input_text", "text": confirmation_text}],
                 },
             })
-            await self._ws_send_json({"type": "response.create"})
+            # No need to manually call response.create - OpenAI handles it automatically
 
     async def _handle_play_song(self, raw_args: str | None):
         args = json.loads(raw_args or "{}")
@@ -596,7 +681,9 @@ class BillySession:
             await asyncio.sleep(1.0)
             await audio.play_song(song_name)
 
-    async def _handle_smart_home_command(self, raw_args: str | None):
+    async def _handle_smart_home_command(
+        self, raw_args: str | None, call_id: str | None = None
+    ):
         args = json.loads(raw_args or "{}")
         prompt = args.get("prompt")
         if not prompt:
@@ -611,6 +698,29 @@ class BillySession:
             logger.verbose(f"HA debug: {ha_response.get('data')}", "🔍")
             ha_message = f"Home Assistant says: {speech_text}"
             print(f"\n📣 {ha_message}")
+
+            # First, send function_call_output to close the smart_home_command function
+            if call_id:
+                logger.info(
+                    f"🔧 Sending function_call_output for smart_home_command (call_id={call_id})",
+                    "🔧",
+                )
+                await self._ws_send_json({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps({
+                            "status": "success",
+                            "response": speech_text,
+                        }),
+                    },
+                })
+                # Small delay to ensure function output is processed
+                await asyncio.sleep(0.1)
+
+            # Then send the HA response as a user message
+            # OpenAI will automatically generate a response after function_call_output + user message
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
@@ -619,9 +729,25 @@ class BillySession:
                     "content": [{"type": "input_text", "text": ha_message}],
                 },
             })
-            await self._ws_send_json({"type": "response.create"})
+            # No need to manually call response.create - OpenAI handles it automatically
         else:
             logger.warning(f"Failed to parse HA response: {ha_response}")
+
+            # Send function_call_output for error case too
+            if call_id:
+                await self._ws_send_json({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps({
+                            "status": "error",
+                            "message": "Home Assistant didn't understand the request",
+                        }),
+                    },
+                })
+                await asyncio.sleep(0.1)
+
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
@@ -635,11 +761,12 @@ class BillySession:
                     ],
                 },
             })
-            await self._ws_send_json({"type": "response.create"})
+            # No need to manually call response.create - OpenAI handles it automatically
 
     async def _on_tool_args_done(self, data: dict[str, Any]):
         name = data.get("name")
         raw_args = data.get("arguments")
+        call_id = data.get("call_id")
         if not raw_args:
             raw_args = self._tool_args_buffer.pop(name, "{}")
 
@@ -647,19 +774,19 @@ class BillySession:
             await self._handle_follow_up_intent(raw_args)
             return
         if name == "update_personality":
-            await self._handle_update_personality(raw_args)
+            await self._handle_update_personality(raw_args, call_id)
             return
         if name == "play_song":
             await self._handle_play_song(raw_args)
             return
         if name == "smart_home_command":
-            await self._handle_smart_home_command(raw_args)
+            await self._handle_smart_home_command(raw_args, call_id)
             return
         if name == "identify_user":
-            await self._handle_identify_user(raw_args)
+            await self._handle_identify_user(raw_args, call_id)
             return
         if name == "store_memory":
-            await self._handle_store_memory(raw_args)
+            await self._handle_store_memory(raw_args, call_id)
             return
         if name == "manage_profile":
             await self._handle_manage_profile(raw_args)
@@ -918,6 +1045,9 @@ class BillySession:
         self.loop = asyncio.get_running_loop()
         logger.info("Session starting...", "⏱️")
 
+        # Reload persona from profile at session start to pick up web UI changes
+        await self._reload_persona_from_profile()
+
         # Debug VAD parameters
         vad_params = SERVER_VAD_PARAMS[TURN_EAGERNESS]
         logger.info(f"🔧 VAD Parameters (eagerness={TURN_EAGERNESS}): {vad_params}")
@@ -925,6 +1055,7 @@ class BillySession:
             f"🔧 Audio Config: SILENCE_THRESHOLD={SILENCE_THRESHOLD}, MIC_TIMEOUT_SECONDS={MIC_TIMEOUT_SECONDS}"
         )
 
+        # Clear all session state
         self.audio_buffer.clear()
         self.committed = False
         self.first_text = True
@@ -933,6 +1064,18 @@ class BillySession:
         self.session_active.set()
         self.user_spoke_after_assistant = False
         self.allow_mic_input = True
+
+        # Ensure mic logging flag is reset (should already be False from __init__)
+        self._mic_data_started = False
+
+        # Debug: Log all mic-blocking conditions at session start
+        logger.info(
+            f"🔧 Mic state check: allow_mic_input={self.allow_mic_input}, "
+            f"session_active={self.session_active.is_set()}, "
+            f"playback_done_event={'SET' if audio.playback_done_event.is_set() else 'CLEAR (waiting for wake-up)'}, "
+            f"TEXT_ONLY_MODE={TEXT_ONLY_MODE}",
+            "🔧",
+        )
 
         async with self.ws_lock:
             if self.ws is None:
@@ -1036,15 +1179,26 @@ class BillySession:
         await self.run_stream()
 
     def mic_callback(self, indata, *_):
+        # Check 1: Mic input allowed and session active
         if not self.allow_mic_input or not self.session_active.is_set():
+            if not hasattr(self, '_logged_mic_blocked_1'):
+                logger.warning(
+                    f"🔇 Mic blocked: allow_mic_input={self.allow_mic_input}, "
+                    f"session_active={self.session_active.is_set()}",
+                    "⚠️",
+                )
+                self._logged_mic_blocked_1 = True
             return
 
-        # Don't send mic data until wake-up sound is finished
+        # Check 2: Wait for wake-up sound to finish
         if not TEXT_ONLY_MODE and not audio.playback_done_event.is_set():
+            if not hasattr(self, '_logged_waiting_for_wakeup'):
+                logger.info("🔇 Mic waiting for wake-up sound to finish...", "⏳")
+                self._logged_waiting_for_wakeup = True
             return
 
         # Log once when mic data starts being sent after wake-up sound
-        if not hasattr(self, '_mic_data_started') and not TEXT_ONLY_MODE:
+        if not self._mic_data_started and not TEXT_ONLY_MODE:
             logger.info("Mic data now being sent (wake-up sound finished)", "🎤")
             self._mic_data_started = True
 
@@ -1309,6 +1463,41 @@ class BillySession:
 
         await self.stop_session()
 
+    async def _reload_persona_from_profile(self):
+        """Reload the persona from the current user's profile to pick up web UI changes."""
+        try:
+            # Reload environment variables to get latest CURRENT_USER
+            from dotenv import load_dotenv
+
+            from .config import ENV_PATH
+
+            load_dotenv(ENV_PATH, override=True)
+            current_user_env = (
+                os.getenv("CURRENT_USER", "").strip().strip("'\"").lower()
+            )
+
+            # Determine which profile to load persona from
+            if current_user_env == "guest" or not current_user_env:
+                # Guest mode - load guest profile's preferred persona
+                guest_profile = user_manager.identify_user("guest", "high")
+                if guest_profile:
+                    preferred_persona = guest_profile.data['USER_INFO'].get(
+                        'preferred_persona', 'default'
+                    )
+                    persona_manager.switch_persona(preferred_persona)
+                    logger.info(f"🎭 Reloaded guest persona: {preferred_persona}", "🎭")
+            else:
+                # User mode - load user's preferred persona
+                current_user = user_manager.get_current_user()
+                if current_user:
+                    preferred_persona = current_user.data['USER_INFO'].get(
+                        'preferred_persona', 'default'
+                    )
+                    persona_manager.switch_persona(preferred_persona)
+                    logger.info(f"🎭 Reloaded user persona: {preferred_persona}", "🎭")
+        except Exception as e:
+            logger.warning(f"Failed to reload persona from profile: {e}", "⚠️")
+
     async def _auto_identify_default_user(self):
         """Automatically identify the current user if set and trigger a greeting."""
         try:
@@ -1388,7 +1577,7 @@ class BillySession:
         except Exception as e:
             logger.warning(f"Failed to load user profile silently: {e}", "⚠️")
 
-    async def _send_user_greeting(self, profile):
+    async def _send_user_greeting(self, profile, call_id: str | None = None):
         """Send a personalized greeting to the current user."""
         try:
             # Generate greeting context for Billy's personality to use
@@ -1398,10 +1587,41 @@ class BillySession:
                 f"Sending greeting context to {profile.name}: {greeting_context}", "👤"
             )
 
-            # Create a simple, direct prompt that encourages Billy to speak
-            context_prompt = f"""Generate a spoken greeting for {greeting_context['user_name']}. It's {greeting_context['time_of_day']} and you've talked {greeting_context['interaction_count']} times before. Recency: {greeting_context['recency']}. Speak naturally and be yourself."""
+            # First, send function_call_output to close the identify_user function
+            # This prevents Billy from thinking identification is "still in progress"
+            if call_id:
+                logger.info(
+                    f"🔧 Sending function_call_output for identify_user (call_id={call_id})",
+                    "🔧",
+                )
+                await self._ws_send_json({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps({
+                            "status": "success",
+                            "user": profile.name,
+                            "message": f"Identified and loaded profile for {profile.name}",
+                        }),
+                    },
+                })
+                # Small delay to ensure function output is processed
+                await asyncio.sleep(0.1)
+
+            # Create a direct greeting prompt that forces Billy to speak
+            # Must be explicit enough that the model generates audio, not just calls follow_up_intent
+            time_info = f"{greeting_context['day_of_week']}, {greeting_context['date']} at {greeting_context['current_time']}"
+
+            # Different greeting style for first meeting vs returning user
+            if greeting_context['is_first_meeting']:
+                context_prompt = f"[GREETING CONTEXT - DO NOT STORE AS MEMORY] {greeting_context['user_name']} just introduced themselves for the first time. Welcome them with a spoken greeting!"
+            else:
+                recency_info = greeting_context.get('time_since_last_seen', 'recently')
+                context_prompt = f"[GREETING CONTEXT - DO NOT STORE AS MEMORY] {greeting_context['user_name']} is back! You last talked {recency_info}. Speak a welcome greeting to them now."
 
             # Send greeting context as a user message that prompts Billy to generate his own greeting
+            # OpenAI will automatically generate a response after function_call_output + user message
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
@@ -1410,9 +1630,7 @@ class BillySession:
                     "content": [{"type": "input_text", "text": context_prompt}],
                 },
             })
-
-            # Trigger audio generation
-            await self._ws_send_json({"type": "response.create"})
+            # No need to manually call response.create - OpenAI handles it automatically
 
             logger.info(
                 f"Greeting context sent and audio triggered for {profile.name}", "👤"
@@ -1430,9 +1648,9 @@ class BillySession:
         )
         last_seen = profile.data['USER_INFO'].get('last_seen', '')
 
-        # Get current time for time-based context
-        current_hour = datetime.now().hour
+        # Get current time for time-based context (uses Pi's local time)
         current_time = datetime.now()
+        current_hour = current_time.hour
 
         # Determine time of day
         if 5 <= current_hour < 12:
@@ -1446,6 +1664,7 @@ class BillySession:
 
         # Calculate recency for more natural greetings
         recency = "recent"
+        time_since_last_seen = None
         if last_seen:
             try:
                 last_seen_time = datetime.fromisoformat(
@@ -1455,29 +1674,45 @@ class BillySession:
 
                 if time_diff.days > 7:
                     recency = "long_time"
+                    time_since_last_seen = f"{time_diff.days} days"
                 elif time_diff.days > 1:
                     recency = "few_days"
+                    time_since_last_seen = f"{time_diff.days} days"
                 elif time_diff.hours > 12:
                     recency = "yesterday"
+                    time_since_last_seen = "yesterday"
                 elif time_diff.hours > 2:
                     recency = "earlier"
+                    time_since_last_seen = f"{time_diff.hours} hours"
                 else:
                     recency = "recent"
+                    time_since_last_seen = "recently"
             except Exception:
                 recency = "recent"
 
         # Let Billy's personality generate the greeting naturally
         # This will be handled by the AI model with these context variables
-        return {
+        context = {
             "user_name": profile.name,
             "is_first_meeting": interaction_count == 0,
             "time_of_day": time_period,
+            "current_time": current_time.strftime("%I:%M %p"),  # e.g., "03:45 PM"
+            "day_of_week": current_time.strftime("%A"),  # e.g., "Saturday"
+            "date": current_time.strftime("%B %d"),  # e.g., "November 02"
             "recency": recency,
             "interaction_count": interaction_count,
             "preferred_persona": preferred_persona,
         }
 
-    async def _handle_identify_user(self, raw_args: str | None):
+        # Add time since last seen if available
+        if time_since_last_seen:
+            context["time_since_last_seen"] = time_since_last_seen
+
+        return context
+
+    async def _handle_identify_user(
+        self, raw_args: str | None, call_id: str | None = None
+    ):
         """Handle user identification via tool calling."""
         args = json.loads(raw_args or "{}")
         name = args.get("name", "").strip().title()
@@ -1545,7 +1780,7 @@ class BillySession:
             # Only send greeting if user is actually introducing themselves
             # Don't greet for auto-loading contexts like "current user" or "default user"
             if context not in ["current user", "default user"]:
-                await self._send_user_greeting(profile)
+                await self._send_user_greeting(profile, call_id)
             else:
                 logger.info(
                     f"Profile loaded for {profile.name} but no greeting sent (auto-load context)",
@@ -1576,7 +1811,9 @@ class BillySession:
                 },
             })
 
-    async def _handle_store_memory(self, raw_args: str | None):
+    async def _handle_store_memory(
+        self, raw_args: str | None, call_id: str | None = None
+    ):
         """Handle memory storage via tool calling."""
         current_user = user_manager.get_current_user()
         if not current_user:
@@ -1614,27 +1851,40 @@ class BillySession:
         # Update session with new memory context
         await self._update_session_with_user_context()
 
-        # Acknowledge memory storage by prompting Billy to respond
-        # Send a user message that will trigger Billy to acknowledge the memory
-        await self._ws_send_json({
-            "type": "conversation.item.create",
-            "item": {
-                "type": "message",
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Please acknowledge that you'll remember this information about {current_user.name}: {memory}",
-                    }
-                ],
-            },
-        })
+        # Instead of just sending function output, send a user message that prompts Billy to acknowledge
+        # This is similar to how the greeting works - it forces Billy to speak
+        if call_id:
+            # Send function output first
+            logger.info(f"🔧 Sending function_call_output for store_memory", "🔧")
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": json.dumps({"status": "success", "stored": memory}),
+                },
+            })
 
-        # Trigger a response so Billy actually speaks the acknowledgment
-        await self._ws_send_json({"type": "response.create"})
+            # Wait a moment for the function output to be processed
+            await asyncio.sleep(0.1)
 
-        # Wait a moment for the response to be generated
-        await asyncio.sleep(0.5)
+            # Send a user message to prompt Billy to acknowledge the memory
+            # OpenAI will automatically generate a response after function_call_output + user message
+            logger.info(f"🔧 Sending prompt message to acknowledge memory", "🔧")
+            await self._ws_send_json({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"[System: Memory stored. Briefly acknowledge storing '{memory}' and continue the conversation naturally.]",
+                        }
+                    ],
+                },
+            })
+            # No need to manually call response.create - OpenAI handles it automatically
 
     async def _handle_manage_profile(self, raw_args: str | None):
         """Handle profile management via tool calling."""
@@ -1806,7 +2056,7 @@ class BillySession:
 
             from .config import ENV_PATH
 
-            set_key(ENV_PATH, "CURRENT_USER", user_name, quote_mode='never')
+            set_key(ENV_PATH, "CURRENT_USER", user_name.lower(), quote_mode='never')
             logger.info(f"Saved current user to .env: {user_name}", "👤")
         except Exception as e:
             logger.warning(f"Failed to save current user to .env: {e}")
@@ -1830,20 +2080,12 @@ class BillySession:
             return
 
         try:
+            # Only update instructions, not voice (voice changes cause API errors during active conversations)
             await self._ws_send_json({
                 "type": "session.update",
                 "session": {
                     "type": "realtime",
                     "instructions": get_instructions_with_user_context(),
-                    "audio": {
-                        "output": {
-                            "format": {
-                                "type": "audio/pcm",
-                                "rate": 24000,
-                            },
-                            "voice": persona_manager.get_current_persona_voice(),
-                        }
-                    },
                 },
             })
             logger.info("Updated session with user context", "👤")

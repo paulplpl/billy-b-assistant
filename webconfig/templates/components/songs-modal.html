@@ -2,7 +2,7 @@
 <div id="songs-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 hidden">
     <div class="bg-zinc-900/50 backdrop-blur-xs border border-zinc-700 rounded-lg w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col shadow-2xl">
         <!-- Fixed Header -->
-        <div class="flex justify-between items-center p-6 border-b border-zinc-700 flex-shrink-0 relative w-full">
+        <div class="flex justify-between items-center p-4 border-b border-zinc-700 flex-shrink-0 relative w-full">
             <div class="flex justify-between items-center relative w-full">
                 <!-- Back button (left) -->
                 <button id="back-to-songs-list-btn" class="text-zinc-400 hover:text-white transition-colors hidden absolute left-0">
@@ -16,7 +16,7 @@
                 </h3>
                 
                 <!-- Close button (right) -->
-                <button id="close-songs-modal" class="text-zinc-400 hover:text-white transition-colors absolute right-0">
+                <button id="close-songs-modal" class="text-zinc-400 hover:text-white transition-colors flex absolute right-0">
                     <span class="material-icons">close</span>
                 </button>
             </div>
@@ -127,7 +127,7 @@
 
                         <!-- Full Audio -->
                         <div class="bg-zinc-800/50 p-4 rounded border border-zinc-700">
-                            <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center justify-between">
                                 <label class="text-sm font-medium text-zinc-300">
                                     Full Mix (full.wav)
                                     <span id="full-status" class="ml-2"></span>
@@ -147,7 +147,7 @@
 
                         <!-- Vocals -->
                         <div class="bg-zinc-800/50 p-4 rounded border border-zinc-700">
-                            <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center justify-between">
                                 <label class="text-sm font-medium text-zinc-300">
                                     Vocals (vocals.wav) - for mouth movements
                                     <span id="vocals-status" class="ml-2"></span>
@@ -167,7 +167,7 @@
 
                         <!-- Drums -->
                         <div class="bg-zinc-800/50 p-4 rounded border border-zinc-700">
-                            <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center justify-between">
                                 <label class="text-sm font-medium text-zinc-300">
                                     Drums (drums.wav) - for tail movements
                                     <span id="drums-status" class="ml-2"></span>

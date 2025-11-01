@@ -5,6 +5,7 @@ Handles user identification, memory storage, and profile management.
 
 import configparser
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -105,11 +106,16 @@ class UserProfile:
 
     def _create_new_profile(self) -> dict[str, Any]:
         """Create a new user profile."""
+        # Get the currently active persona instead of defaulting to 'default'
+        from .persona_manager import persona_manager
+
+        current_persona = persona_manager.current_persona
+
         data = {
             'USER_INFO': {
                 'name': self.name,
                 'display_name': self.name,
-                'preferred_persona': 'default',
+                'preferred_persona': current_persona,
                 'created_date': datetime.now().isoformat(),
                 'last_seen': datetime.now().isoformat(),
                 'interaction_count': '0',
@@ -119,8 +125,39 @@ class UserProfile:
         }
 
         self._save_profile(data)
-        logger.info(f"Created new profile for {self.name}", "👤")
+
+        # If this is the first time creating a guest profile, set it as default user
+        if self.name.lower() == 'guest':
+            self._set_guest_as_default_if_first_time()
+
+        logger.info(
+            f"Created new profile for {self.name} with persona: {current_persona}", "👤"
+        )
         return data
+
+    def _set_guest_as_default_if_first_time(self):
+        """Set guest as default user if this is the first time creating guest.ini."""
+        try:
+            from dotenv import get_key, set_key
+
+            from .config import ENV_PATH
+
+            # Check if DEFAULT_USER is already set to something other than guest
+            current_default = get_key(ENV_PATH, "DEFAULT_USER")
+            if current_default and current_default.strip().lower() != "guest":
+                # DEFAULT_USER is already set to a specific user, don't change it
+                logger.info(
+                    f"DEFAULT_USER already set to '{current_default}', not changing to guest",
+                    "👤",
+                )
+                return
+
+            # Set DEFAULT_USER to guest (lowercase to match folder name)
+            set_key(ENV_PATH, "DEFAULT_USER", "guest", quote_mode='never')
+            logger.info("Set guest as default user in .env file", "👤")
+
+        except Exception as e:
+            logger.warning(f"Failed to set guest as default user: {e}")
 
     def _save_profile(self, data: Optional[dict[str, Any]] = None):
         """Save profile to INI file."""
@@ -155,6 +192,8 @@ class UserProfile:
 
         with open(self.profile_path, 'w') as f:
             config.write(f)
+            f.flush()  # Flush Python buffer
+            os.fsync(f.fileno())  # Force write to disk
 
     def add_memory(
         self, memory: str, importance: str = "medium", category: str = "fact"
@@ -418,6 +457,21 @@ class UserProfileManager:
             else:
                 logger.info("Starting in guest mode", "👤")
                 self.clear_current_user()
+                # Load the guest profile's preferred persona for guest mode
+                try:
+                    guest_profile = self.identify_user("guest", "high")
+                    if guest_profile:
+                        preferred_persona = guest_profile.data['USER_INFO'].get(
+                            'preferred_persona', 'default'
+                        )
+                        from .persona_manager import persona_manager
+
+                        persona_manager.switch_persona(preferred_persona)
+                        logger.info(
+                            f"Loaded guest preferred persona: {preferred_persona}", "🎭"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to load guest preferred persona: {e}")
         except Exception as e:
             logger.warning(f"Failed to load default user: {e}", "⚠️")
             self.clear_current_user()

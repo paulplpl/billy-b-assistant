@@ -69,5 +69,6 @@ versions.ini
 venv
 webconfig/node_modules
 personas/
+!persona_presets/*/persona.ini
 profiles/
 custom_songs/

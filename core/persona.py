@@ -26,16 +26,16 @@ class PersonaProfile:
         self.honesty = honesty
 
     # 5 buckets for every trait
-    #   min: 0–9, low: 10–29, med: 30–69, high: 70–89, max: 90–100
+    #   min: 0–14, low: 15–34, med: 35–64, high: 65–84, max: 85–100
     @staticmethod
     def _bucket(v: int) -> str:
-        if v < 10:
+        if v < 15:
             return "min"
-        if v < 30:
+        if v < 35:
             return "low"
-        if v < 70:
+        if v < 65:
             return "med"
-        if v < 90:
+        if v < 85:
             return "high"
         return "max"
 

@@ -1,6 +1,11 @@
 from app import create_app
 from app.core_imports import core_config
 
+# Initialize user manager to load default user and persona
+from core.profile_manager import user_manager
+
+
+user_manager.load_default_user()
 
 app = create_app()
 

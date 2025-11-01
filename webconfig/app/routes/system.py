@@ -203,8 +203,8 @@ def get_config():
 
         # Get current user from .env file (already reloaded above)
         current_user_name = (
-            os.getenv("CURRENT_USER", "").strip().strip("'\"")
-        )  # Remove quotes and whitespace
+            os.getenv("CURRENT_USER", "").strip().strip("'\"").lower()
+        )  # Remove quotes, whitespace, and normalize to lowercase
         current_user = None
 
         # Update config_data with fresh CURRENT_USER value
@@ -271,14 +271,16 @@ def get_config():
             print(f"Failed to load profile data: {e}")
             config_data["AVAILABLE_PROFILES"] = []
 
-        # Add available personas
+        # Add available personas and current persona
         try:
             from core.persona_manager import persona_manager
 
             config_data["AVAILABLE_PERSONAS"] = persona_manager.get_available_personas()
+            config_data["CURRENT_PERSONA"] = persona_manager.current_persona
         except Exception as e:
             print(f"Failed to load personas: {e}")
             config_data["AVAILABLE_PERSONAS"] = []
+            config_data["CURRENT_PERSONA"] = "default"
 
     except Exception as e:
         print(f"Failed to load user profile data: {e}")

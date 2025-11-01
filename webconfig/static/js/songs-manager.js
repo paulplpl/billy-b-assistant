@@ -174,7 +174,6 @@ const SongsManager = (() => {
                     <div class="flex items-start justify-between mb-2">
                         <div class="flex-1">
                             <h4 class="text-white font-semibold">${song.title}</h4>
-                            <p class="text-xs text-zinc-500">${song.name}</p>
                         </div>
                         ${statusIcon}
                     </div>
@@ -185,11 +184,6 @@ const SongsManager = (() => {
                         <span>${song.bpm} BPM</span>
                         <span>•</span>
                         <span>Gain: ${song.gain}</span>
-                    </div>
-                    <div class="flex gap-2 mt-2">
-                        ${song.has_full ? '<span class="text-xs text-emerald-400">Full</span>' : '<span class="text-xs text-zinc-600">Full</span>'}
-                        ${song.has_vocals ? '<span class="text-xs text-emerald-400">Vocals</span>' : '<span class="text-xs text-zinc-600">Vocals</span>'}
-                        ${song.has_drums ? '<span class="text-xs text-emerald-400">Drums</span>' : '<span class="text-xs text-zinc-600">Drums</span>'}
                     </div>
                 </div>
             `;

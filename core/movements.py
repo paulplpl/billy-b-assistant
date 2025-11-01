@@ -302,6 +302,16 @@ def stop_all_motors():
         lgpio.gpio_write(h, pin, 0)
 
 
+def cleanup_gpio():
+    """Close GPIO chip handle to prevent memory corruption on shutdown."""
+    try:
+        stop_all_motors()
+        lgpio.gpiochip_close(h)
+        logger.info("GPIO cleanup complete", "✅")
+    except Exception as e:
+        logger.warning(f"GPIO cleanup error: {e}", "⚠️")
+
+
 def is_motor_active():
     return any(_pin_is_active(pin) for pin in motor_pins)
 
