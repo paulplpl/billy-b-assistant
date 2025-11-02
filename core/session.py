@@ -242,13 +242,13 @@ def get_tools_for_current_mode():
         {
             "name": "smart_home_command",
             "type": "function",
-            "description": "Send a natural language prompt to the Home Assistant conversation API and read back the response.",
+            "description": "Send a DIRECT command to Home Assistant (e.g., 'Turn on lights', 'Set temperature to 72'). **CRITICAL: Only call this for DIRECT commands. If the user asks you to ASK/CHECK/CONFIRM first (e.g., 'ask if lights should be on'), do NOT call this function - just speak the question and wait for their answer.**",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "The command to send to Home Assistant",
+                        "description": "The DIRECT command to send to Home Assistant (not a question)",
                     }
                 },
                 "required": ["prompt"],
@@ -257,7 +257,7 @@ def get_tools_for_current_mode():
         {
             "name": "follow_up_intent",
             "type": "function",
-            "description": "Call at the end of your turn to indicate if you expect a user reply now.",
+            "description": "**MANDATORY: MUST CALL AFTER EVERY RESPONSE**. Call at the end of your turn to indicate if you expect a user reply. Set expects_follow_up=true for questions, false for statements. **CRITICAL: NEVER call this as your ONLY response - you MUST generate spoken audio first, then call this function. If audio is unclear, say 'I didn't catch that' before calling this.**",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -302,7 +302,7 @@ def get_tools_for_current_mode():
             {
                 "name": "store_memory",
                 "type": "function",
-                "description": "**CRITICAL: MUST CALL IMMEDIATELY** when users mention ANY personal preference, fact, or interest. DO NOT SKIP THIS. Call BEFORE responding with speech. Triggers: 'I like/love/enjoy X' (preference), 'I hate/dislike X' (preference), 'I eat/cook/make X' (preference), 'My favorite X' (preference), 'I work/study X' (fact), 'I have/own X' (fact), 'I live in X' (fact), 'I am X' (fact), 'I do X' (interest/hobby). ALWAYS store food preferences when mentioned. Example: User says 'I like pizza' → IMMEDIATELY call store_memory(memory='likes pizza', importance='medium', category='preference') THEN respond.",
+                "description": "Store lasting preferences, facts, and interests that users VOLUNTARILY share. **CRITICAL: DO NOT STORE answers to YOUR OWN questions!** If you just asked a question, the answer is NOT a memory. Store ONLY when: (1) User volunteers info unprompted, OR (2) Info is NOT answering your question. Examples: WRONG: You: 'What cheese?' User: 'Gruyère' -> DO NOT STORE (answering your question). CORRECT: User: 'I love Gruyère cheese' -> DO STORE (volunteered). Call BEFORE responding with speech when appropriate.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -657,7 +657,6 @@ class BillySession:
                 await asyncio.sleep(0.1)
 
             # Then send confirmation message to prompt Billy to speak
-            # OpenAI will automatically generate a response after function_call_output + user message
             confirmation_text = " ".join([
                 f"Okay, {trait} is now set to {PERSONALITY._bucket(val).upper()}."
                 for trait, val in changes
@@ -670,7 +669,15 @@ class BillySession:
                     "content": [{"type": "input_text", "text": confirmation_text}],
                 },
             })
-            # No need to manually call response.create - OpenAI handles it automatically
+
+            # IMPORTANT: Similar to smart_home_command and greetings, the update_personality response is already complete
+            # OpenAI won't auto-start a new response, so we must explicitly trigger it
+            logger.info(
+                "🔧 Triggering response.create for update_personality confirmation (response already complete)",
+                "🔧",
+            )
+            await self._ws_send_json({"type": "response.create"})
+            logger.info("🔧 response.create sent successfully", "🔧")
 
     async def _handle_play_song(self, raw_args: str | None):
         args = json.loads(raw_args or "{}")
@@ -696,8 +703,7 @@ class BillySession:
 
         if speech_text:
             logger.verbose(f"HA debug: {ha_response.get('data')}", "🔍")
-            ha_message = f"Home Assistant says: {speech_text}"
-            print(f"\n📣 {ha_message}")
+            print(f"\n📣 Home Assistant says: {speech_text}")
 
             # First, send function_call_output to close the smart_home_command function
             if call_id:
@@ -719,17 +725,26 @@ class BillySession:
                 # Small delay to ensure function output is processed
                 await asyncio.sleep(0.1)
 
-            # Then send the HA response as a user message
-            # OpenAI will automatically generate a response after function_call_output + user message
+            # Send a directive message that explicitly requests speech
+            # This ensures Billy verbally confirms the action instead of responding silently
+            confirmation_prompt = f"Home Assistant completed the task: '{speech_text}'. Confirm this out loud to the user."
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
                     "type": "message",
                     "role": "user",
-                    "content": [{"type": "input_text", "text": ha_message}],
+                    "content": [{"type": "input_text", "text": confirmation_prompt}],
                 },
             })
-            # No need to manually call response.create - OpenAI handles it automatically
+
+            # IMPORTANT: Similar to greetings, the smart_home_command response is already complete
+            # OpenAI won't auto-start a new response, so we must explicitly trigger it
+            logger.info(
+                "🔧 Triggering response.create for smart_home_command confirmation (response already complete)",
+                "🔧",
+            )
+            await self._ws_send_json({"type": "response.create"})
+            logger.info("🔧 response.create sent successfully", "🔧")
         else:
             logger.warning(f"Failed to parse HA response: {ha_response}")
 
@@ -761,7 +776,14 @@ class BillySession:
                     ],
                 },
             })
-            # No need to manually call response.create - OpenAI handles it automatically
+
+            # IMPORTANT: Similar to the success case, we need to manually trigger response.create
+            logger.info(
+                "🔧 Triggering response.create for smart_home_command error (response already complete)",
+                "🔧",
+            )
+            await self._ws_send_json({"type": "response.create"})
+            logger.info("🔧 response.create sent successfully", "🔧")
 
     async def _on_tool_args_done(self, data: dict[str, Any]):
         name = data.get("name")

@@ -6,7 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0] — 2025-11-02
 >### 🎉 Major New Features:
-> **User Profiles with memories - Multiple Personas - Custom Song Manager**
+> User Profiles with memories - Multiple Personas - Custom Song Manager - Mqtt Say command support for follow-ups 
+
+>### ⚠️ For existing builds of Billy
+>
+> **If you're coming from <= v1.4.0:** Please select the Legacy Pin Layout in the Hardware Settings tab of the Web UI if you can't switch to the new unified wiring layout (see [BUILDME.md](./docs/BUILDME.md#from-motor-driver-to-raspberry-pi-gpio-pinout))
 
 ### Added
 
@@ -50,7 +54,11 @@ All notable changes to this project will be documented in this file.
 - **Head Movement**: Prevented head from getting stuck during routines
 - **Session Hanging**: Added timeouts to prevent stuck sessions
 - **Audio**: Standardized RMS calculations for consistent silence detection
- 
+- **Function Call Flow**: Fixed "conversation already has an active response" error by properly closing function calls with `function_call_output` before OpenAI auto-generates responses
+- **GPIO Cleanup**: Fixed "double free or corruption" crash on shutdown by properly closing GPIO resources
+- **Smart Home Commands**: Billy now correctly distinguishes between direct commands ("turn on lights") and questions ("ask if lights should be on") - no longer executes commands when asked to ask first
+- **Function Confirmations**: Fixed issue where Billy wouldn't always provide spoken confirmation after smart home commands and personality changes - now reliably triggers verbal responses
+
 ---
 
 ## [1.5.0] — 2025-10-13
