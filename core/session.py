@@ -1616,13 +1616,16 @@ class BillySession:
             recency_info = greeting_context.get('time_since_last_seen', 'recently')
 
             if greeting_context['is_first_meeting']:
-                # Direct request for a greeting - no factual info to store
-                greeting_prompt = f"Billy, please say hello and welcome me! This is my first time meeting you."
+                # System instruction for greeting - prefix with [SYSTEM:] to prevent memory storage
+                greeting_prompt = (
+                    f"[SYSTEM: Speak your greeting now to welcome the new user]"
+                )
             else:
-                # Direct request for a greeting - no factual info to store
-                greeting_prompt = f"Billy, say hello to me! Just greet me warmly."
+                # System instruction for greeting - prefix with [SYSTEM:] to prevent memory storage
+                greeting_prompt = f"[SYSTEM: Speak your greeting now to acknowledge the returning user]"
 
             # Send the greeting prompt as a user message
+            logger.info(f"🔧 Sending greeting prompt: {greeting_prompt}", "🔧")
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
@@ -1639,6 +1642,7 @@ class BillySession:
                 "🔧",
             )
             await self._ws_send_json({"type": "response.create"})
+            logger.info("🔧 response.create sent successfully", "🔧")
 
             logger.info(
                 f"Greeting context sent and audio triggered for {profile.name}", "👤"

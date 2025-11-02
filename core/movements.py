@@ -18,6 +18,7 @@ logger.info(f"Using third motor: {USE_THIRD_MOTOR} | Pin profile: {BILLY_PINS}",
 # === GPIO Setup ===
 h = lgpio.gpiochip_open(0)
 FREQ = 10000  # PWM frequency
+_gpio_active = True  # Flag to track if GPIO handle is still valid
 
 # -------------------------------------------------------------------
 # Pin mapping by profile
@@ -66,6 +67,8 @@ _pwm = {pin: {"duty": 0, "since": None} for pin in motor_pins}
 
 def set_pwm(pin: int, duty: int):
     """Start/adjust PWM on pin and remember when it went active."""
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     lgpio.tx_pwm(h, pin, FREQ, int(duty))
     if duty > 0:
         _pwm[pin]["duty"] = int(duty)
@@ -79,6 +82,8 @@ def set_pwm(pin: int, duty: int):
 
 def clear_pwm(pin: int):
     """Stop PWM on pin and clear active since timestamp."""
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     lgpio.tx_pwm(h, pin, FREQ, 0)
     _pwm[pin]["duty"] = 0
     _pwm[pin]["since"] = None
@@ -87,6 +92,8 @@ def clear_pwm(pin: int):
 # === Motor Helpers ===
 def brake_motor(pin1, pin2=None):
     """Actively stop the channel: zero PWM and drive LOW."""
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     clear_pwm(pin1)
     if pin2 is not None:
         clear_pwm(pin2)
@@ -95,6 +102,8 @@ def brake_motor(pin1, pin2=None):
 
 
 def run_motor_async(pwm_pin, low_pin=None, speed_percent=100, duration=0.3, brake=True):
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     if low_pin is not None:
         lgpio.gpio_write(h, low_pin, 0)
     set_pwm(pwm_pin, int(speed_percent))
@@ -118,6 +127,8 @@ def move_head(state="on"):
     global head_out
 
     def _move_head_on():
+        if not _gpio_active:
+            return  # GPIO handle already closed, skip
         # Ensure opposite input is LOW if sharing a bridge (2-motor cases)
         # For 3-motor "new" layout, mate is hard GND so this is a no-op.
         lgpio.gpio_write(h, TAIL, 0) if TAIL is not None else None
@@ -277,6 +288,8 @@ def _mate_for(pin: int):
 
 def _stop_channel(pin: int):
     """Brake one channel safely (pin + its mate)."""
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     mate = _mate_for(pin)
     clear_pwm(pin)
     lgpio.gpio_write(h, pin, 0)
@@ -297,6 +310,8 @@ def _pin_is_active(pin: int) -> bool:
 
 def stop_all_motors():
     logger.info("Stopping all motors", "🛑")
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     for pin in motor_pins:
         clear_pwm(pin)
         lgpio.gpio_write(h, pin, 0)
@@ -304,8 +319,11 @@ def stop_all_motors():
 
 def cleanup_gpio():
     """Close GPIO chip handle to prevent memory corruption on shutdown."""
+    global _gpio_active
     try:
         stop_all_motors()
+        _gpio_active = False  # Mark GPIO as inactive before closing
+        time.sleep(0.1)  # Give any pending timer threads a moment to check the flag
         lgpio.gpiochip_close(h)
         logger.info("GPIO cleanup complete", "✅")
     except Exception as e:
