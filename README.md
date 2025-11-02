@@ -5,8 +5,8 @@ The **Billy Bass Assistant** is a Raspberry Pi–powered voice assistant embedde
 > **This project is still in BETA.** Things might crash, get stuck or make Billy scream uncontrollably (ok that last part maybe not literally but you get the point). Proceed with fishy caution.
 
 ![Billy Bathroom](./docs/images/billy_bathroom.jpeg)
-![Billy UI](./docs/images/web-UI.png)
-<img src="./docs/images/web-UI-Mobile.png" alt="Billy UI Mobile" style="width: 33%;" />
+![Billy UI](./docs/images/Web-UI.png)
+<img src="./docs/images/Web-UI-Mobile.png" alt="Billy UI Mobile" style="width: 33%;" />
 ---
 
 ## Features
