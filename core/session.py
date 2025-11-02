@@ -1587,13 +1587,14 @@ class BillySession:
                 f"Sending greeting context to {profile.name}: {greeting_context}", "👤"
             )
 
-            # First, send function_call_output to close the identify_user function
-            # This prevents Billy from thinking identification is "still in progress"
+            # Send function_call_output to close the identify_user function
+            # Then send a user message to prompt Billy to speak (same pattern as smart_home_command)
             if call_id:
                 logger.info(
                     f"🔧 Sending function_call_output for identify_user (call_id={call_id})",
                     "🔧",
                 )
+
                 await self._ws_send_json({
                     "type": "conversation.item.create",
                     "item": {
@@ -1609,28 +1610,35 @@ class BillySession:
                 # Small delay to ensure function output is processed
                 await asyncio.sleep(0.1)
 
-            # Create a direct greeting prompt that forces Billy to speak
-            # Must be explicit enough that the model generates audio, not just calls follow_up_intent
-            time_info = f"{greeting_context['day_of_week']}, {greeting_context['date']} at {greeting_context['current_time']}"
+            # Now send a user message that prompts Billy to speak
+            # This follows the same pattern as smart_home_command
+            time_info = f"{greeting_context['current_time']}"
+            recency_info = greeting_context.get('time_since_last_seen', 'recently')
 
-            # Different greeting style for first meeting vs returning user
             if greeting_context['is_first_meeting']:
-                context_prompt = f"[GREETING CONTEXT - DO NOT STORE AS MEMORY] {greeting_context['user_name']} just introduced themselves for the first time. Welcome them with a spoken greeting!"
+                # Direct request for a greeting - no factual info to store
+                greeting_prompt = f"Billy, please say hello and welcome me! This is my first time meeting you."
             else:
-                recency_info = greeting_context.get('time_since_last_seen', 'recently')
-                context_prompt = f"[GREETING CONTEXT - DO NOT STORE AS MEMORY] {greeting_context['user_name']} is back! You last talked {recency_info}. Speak a welcome greeting to them now."
+                # Direct request for a greeting - no factual info to store
+                greeting_prompt = f"Billy, say hello to me! Just greet me warmly."
 
-            # Send greeting context as a user message that prompts Billy to generate his own greeting
-            # OpenAI will automatically generate a response after function_call_output + user message
+            # Send the greeting prompt as a user message
             await self._ws_send_json({
                 "type": "conversation.item.create",
                 "item": {
                     "type": "message",
                     "role": "user",
-                    "content": [{"type": "input_text", "text": context_prompt}],
+                    "content": [{"type": "input_text", "text": greeting_prompt}],
                 },
             })
-            # No need to manually call response.create - OpenAI handles it automatically
+
+            # IMPORTANT: Unlike other function calls, greetings happen AFTER a response is complete
+            # OpenAI won't auto-start a new response, so we must explicitly trigger it
+            logger.info(
+                "🔧 Triggering response.create for greeting (response already complete)",
+                "🔧",
+            )
+            await self._ws_send_json({"type": "response.create"})
 
             logger.info(
                 f"Greeting context sent and audio triggered for {profile.name}", "👤"

@@ -1335,17 +1335,17 @@ class UserProfilePanel {
                 // Restart Billy service if it was running to pick up the new persona
                 if (wasActive) {
                     try {
-                        this.showNotification('🔄 Restarting Billy to load new persona...', 'warning');
+                        this.showNotification('Restarting Billy to load new persona...', 'warning');
                         // Wait a moment to ensure profile is written to disk
                         await new Promise(resolve => setTimeout(resolve, 500));
                         await fetch('/restart-billy', { method: 'POST' });
                         // Wait a moment for the service to restart
                         await new Promise(resolve => setTimeout(resolve, 2000));
-                        this.showNotification('✅ Billy restarted with new persona', 'success');
+                        this.showNotification('Billy restarted with new persona', 'success');
                         ServiceStatus.fetchStatus();
                     } catch (err) {
                         console.error('Failed to restart Billy service:', err);
-                        this.showNotification('⚠️ Persona switched, but service restart failed. Please restart manually.', 'warning', 5000);
+                        this.showNotification('Persona switched, but service restart failed. Please restart manually.', 'warning', 5000);
                     }
                 }
 
@@ -1400,17 +1400,17 @@ class UserProfilePanel {
             // Restart Billy service if it was running to pick up the new persona
             if (wasActive) {
                 try {
-                    this.showNotification('🔄 Restarting Billy to load new persona...', 'warning');
+                    this.showNotification('Restarting Billy to load new persona...', 'warning');
                     // Wait a moment to ensure profile is written to disk
                     await new Promise(resolve => setTimeout(resolve, 500));
                     await fetch('/restart-billy', { method: 'POST' });
                     // Wait a moment for the service to restart
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    this.showNotification('✅ Billy restarted with new persona', 'success');
+                    this.showNotification('Billy restarted with new persona', 'success');
                     ServiceStatus.fetchStatus();
                 } catch (err) {
                     console.error('Failed to restart Billy service:', err);
-                    this.showNotification('⚠️ Profile saved, but service restart failed. Please restart manually.', 'warning', 5000);
+                    this.showNotification('Profile saved, but service restart failed. Please restart manually.', 'warning', 5000);
                 }
             }
 

@@ -14,7 +14,7 @@ const AudioPanel = (() => {
         try {
             const data = await ServiceStatus.fetchStatus();
             if (data.status === "active") {
-                showNotification("🛑 Stopping Billy service for speaker test...", "warning");
+                showNotification("Stopping Billy service for speaker test...", "warning");
                 
                 // Stop the Billy service
                 const stopResponse = await fetch("/stop-billy", {method: "POST"});
@@ -25,11 +25,11 @@ const AudioPanel = (() => {
                 // Wait a moment for the service to stop
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
-                showNotification("✅ Billy service stopped. Running speaker test...", "success");
+                showNotification("Billy service stopped. Running speaker test...", "success");
             }
             
             await fetch("/speaker-test", {method: "POST"});
-            showNotification("🔊 Speaker test triggered");
+            showNotification("Speaker test triggered");
         } catch (err) {
             console.error("Failed to trigger speaker test:", err);
             showNotification("Failed to trigger speaker test: " + err.message, "error");
@@ -49,13 +49,13 @@ const AudioPanel = (() => {
             // Restart service if it was running before
             if (serviceWasRunning) {
                 try {
-                    showNotification("🔄 Restarting Billy service...", "warning");
+                    showNotification("Restarting Billy service...", "warning");
                     await fetch("/restart-billy", {method: "POST"});
-                    showNotification("✅ Billy service restarted", "success");
+                    showNotification("Billy service restarted", "success");
                     ServiceStatus.fetchStatus();
                 } catch (err) {
                     console.error("Failed to restart Billy service:", err);
-                    showNotification("❌ Failed to restart Billy service. Please restart manually.", "error");
+                    showNotification("Failed to restart Billy service. Please restart manually.", "error");
                 }
             }
         } else {
@@ -64,17 +64,17 @@ const AudioPanel = (() => {
                 serviceWasRunning = (data.status === "active");
                 
                 if (serviceWasRunning) {
-                    showNotification("🛑 Stopping Billy service for mic test...", "warning");
+                    showNotification("Stopping Billy service for mic test...", "warning");
                     await fetch("/stop-billy", {method: "POST"});
                     // Wait a moment for the service to stop
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    showNotification("✅ Billy service stopped. Starting mic test...", "success");
+                    showNotification("Billy service stopped. Starting mic test...", "success");
                 }
                 
                 startMicCheck();
                 btn.classList.remove("bg-zinc-800");
                 btn.classList.add("bg-emerald-600");
-                showNotification("🎤 Mic check started");
+                showNotification("Mic check started");
             } catch (err) {
                 console.error("Failed to toggle mic check:", err);
                 showNotification("Mic check failed: " + err.message, "error");
