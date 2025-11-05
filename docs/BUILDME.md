@@ -101,9 +101,9 @@ This keeps the driver in a known safe state and prevents “phantom” motor mov
 
 | Component | GPIO Pin (Physical)             | Motor Driver Input |
 |-----------|---------------------------------|--------------------|
-| Head      | GPIO 22 (pin 11)                | Pin IN1            |
+| Head      | GPIO 22 (pin 15)                | Pin IN1            |
 | Tail      | GPIO 27 (pin 13)                | Pin IN2            |
-| Mouth     | GPIO 17 (pin 15)                | Pin IN3            |
+| Mouth     | GPIO 17 (pin 11)                | Pin IN3            |
 | Motor +   | 5v pwr  (pin 4)                 | Pin +              |
 | Motor -   | Ground  (pin 6)                 | Pin -              |
 | Button    | GPIO 24 (pin 18) & GND (pin 20) |                    |
@@ -113,9 +113,9 @@ This keeps the driver in a known safe state and prevents “phantom” motor mov
 
 | Component | GPIO Pin (Physical)             | Motor Driver Input |
 |-----------|---------------------------------|--------------------|
-| Head      | GPIO 22 (pin 11)                | Driver 1 Pin IN1   |
+| Head      | GPIO 22 (pin 15)                | Driver 1 Pin IN1   |
 | Tail      | GPIO 27 (pin 13)                | Driver 2 Pin IN1   |
-| Mouth     | GPIO 17 (pin 15)                | Driver 1 Pin IN3   |
+| Mouth     | GPIO 17 (pin 11)                | Driver 1 Pin IN3   |
 | Motor +   | 5v pwr  (pin 4)                 | Driver 1 & 2 Pin + |
 | Motor -   | Ground  (pin 6)                 | Driver 1 & 2 Pin - |
 | Button    | GPIO 24 (pin 18) & GND (pin 20) |                    |
