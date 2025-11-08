@@ -901,6 +901,8 @@ class BillySession:
         if self.mic_running:
             try:
                 self.mic.stop()
+                # Small delay to ensure ALSA releases the device
+                time.sleep(0.1)
             except Exception as e:
                 logger.warning(f"Error while stopping mic: {e}")
             self.mic_running = False

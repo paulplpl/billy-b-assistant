@@ -19,6 +19,7 @@ interrupt_event = threading.Event()
 session_instance: BillySession | None = None
 last_button_time = 0
 button_debounce_delay = 0.5  # seconds debounce
+_session_start_lock = threading.Lock()  # Lock to prevent concurrent session starts
 
 # Setup hardware button
 button = Button(config.BUTTON_PIN, pull_up=True)
@@ -75,35 +76,67 @@ def on_button():
             finally:
                 # Always ensure cleanup
                 session_instance = None
+                # Wait for session thread to finish to ensure mic is fully closed
+                if session_thread and session_thread.is_alive():
+                    logger.info("Waiting for session thread to finish...", "⏳")
+                    session_thread.join(timeout=2.0)
+                    if session_thread.is_alive():
+                        logger.warning("Session thread did not finish in time", "⚠️")
         is_active = False  # ✅ Ensure this is always set after stopping
         return
 
-    audio.ensure_playback_worker_started(config.CHUNK_MS)
-    # Clear the playback done event so session waits for wake-up sound
-    audio.playback_done_event.clear()
-    logger.info("🔧 playback_done_event cleared (waiting for wake-up sound)", "🔧")
-    threading.Thread(target=audio.play_random_wake_up_clip, daemon=True).start()
-    is_active = True
-    interrupt_event = threading.Event()  # Fresh event for each session
-    logger.info("Button pressed. Listening...", "🎤")
+    # Use lock to prevent concurrent session starts (but allow interruption above)
+    if not _session_start_lock.acquire(blocking=False):
+        logger.warning("Session start already in progress, ignoring button press", "⚠️")
+        return
 
-    def run_session():
-        global session_instance, is_active
-        try:
-            move_head("on")
-            session_instance = BillySession(interrupt_event=interrupt_event)
-            session_instance.last_activity[0] = time.time()
-            asyncio.run(session_instance.start())
-        except Exception as e:
-            logger.error(f"Session error: {e}")
-        finally:
-            move_head("off")
-            is_active = False
-            session_instance = None  # Clear reference
-            logger.info("Waiting for button press...", "🕐")
+    try:
+        # Ensure previous session thread is fully finished before starting new one
+        if session_thread and session_thread.is_alive():
+            logger.warning("Previous session thread still running, waiting...", "⏳")
+            session_thread.join(timeout=2.0)
+            if session_thread.is_alive():
+                logger.error(
+                    "Previous session thread did not finish, aborting new session", "❌"
+                )
+                _session_start_lock.release()
+                return
 
-    session_thread = threading.Thread(target=run_session, daemon=True)
-    session_thread.start()
+        audio.ensure_playback_worker_started(config.CHUNK_MS)
+        # Clear the playback done event so session waits for wake-up sound
+        audio.playback_done_event.clear()
+        logger.info("🔧 playback_done_event cleared (waiting for wake-up sound)", "🔧")
+        threading.Thread(target=audio.play_random_wake_up_clip, daemon=True).start()
+        is_active = True
+        interrupt_event = threading.Event()  # Fresh event for each session
+        logger.info("Button pressed. Listening...", "🎤")
+
+        def run_session():
+            global session_instance, is_active
+            try:
+                move_head("on")
+                session_instance = BillySession(interrupt_event=interrupt_event)
+                session_instance.last_activity[0] = time.time()
+                asyncio.run(session_instance.start())
+            except Exception as e:
+                logger.error(f"Session error: {e}")
+            finally:
+                move_head("off")
+                is_active = False
+                session_instance = None  # Clear reference
+                logger.info("Waiting for button press...", "🕐")
+                # Release lock when session finishes
+                with contextlib.suppress(Exception):
+                    _session_start_lock.release()  # Lock might already be released
+
+        session_thread = threading.Thread(target=run_session, daemon=True)
+        session_thread.start()
+        # Lock will be released by the session thread when it finishes
+    except Exception as e:
+        # If anything goes wrong, release the lock
+        logger.error(f"Error starting session: {e}")
+        with contextlib.suppress(Exception):
+            _session_start_lock.release()
 
 
 def start_loop():
