@@ -6,6 +6,8 @@ import threading
 import traceback
 from pathlib import Path
 
+from core.logger import logger
+
 
 # --- Ensure .env exists ---
 def ensure_env_file():
@@ -33,16 +35,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Imports that might use environment variables ---
+from pathlib import Path
+
 import core.button
 from core.audio import playback_queue
-from core.movements import start_motor_watchdog, stop_all_motors
+
+# --- Reload logger level after environment is loaded ---
+from core.logger import reload_log_level
+from core.movements import start_motor_watchdog
 from core.mqtt import start_mqtt, stop_mqtt
 
 
+current_level = reload_log_level()
+print(f"🔧 Log level set to: {current_level.name}")
+
+
 def signal_handler(sig, frame):
-    print("\n👋 Exiting cleanly (signal received).")
+    logger.info("Exiting cleanly (signal received).", "👋")
     playback_queue.put(None)
-    stop_all_motors()
+    from core.movements import cleanup_gpio
+
+    cleanup_gpio()
     stop_mqtt()
     sys.exit(0)
 
@@ -53,6 +66,12 @@ main_event_loop = asyncio.get_event_loop()
 def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    # Load default user profile BEFORE starting button loop
+    # This ensures the persona manager is set to the correct persona before any sessions start
+    from core.profile_manager import user_manager
+
+    user_manager.load_default_user()
 
     threading.Thread(target=start_mqtt, daemon=True).start()
     start_motor_watchdog()
@@ -65,6 +84,8 @@ if __name__ == "__main__":
     except Exception as e:
         print("❌ Unhandled exception occurred:", e)
         traceback.print_exc()
-        stop_all_motors()
+        from core.movements import cleanup_gpio
+
+        cleanup_gpio()
         stop_mqtt()
         sys.exit(1)

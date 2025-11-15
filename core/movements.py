@@ -1,4 +1,5 @@
 import atexit
+import contextlib
 import random
 import threading
 import time
@@ -7,16 +8,18 @@ from threading import Lock, Thread
 import lgpio
 import numpy as np
 
-from .config import BILLY_PINS, MOUTH_ARTICULATION, is_classic_billy
+from .config import BILLY_PINS, is_classic_billy
+from .logger import logger
 
 
 # === Configuration ===
 USE_THIRD_MOTOR = is_classic_billy()
-print(f"⚙️ Using third motor: {USE_THIRD_MOTOR} | Pin profile: {BILLY_PINS}")
+logger.info(f"Using third motor: {USE_THIRD_MOTOR} | Pin profile: {BILLY_PINS}", "⚙️")
 
 # === GPIO Setup ===
 h = lgpio.gpiochip_open(0)
 FREQ = 10000  # PWM frequency
+_gpio_active = True  # Flag to track if GPIO handle is still valid
 
 # -------------------------------------------------------------------
 # Pin mapping by profile
@@ -48,8 +51,34 @@ motor_pins = [p for p in (MOUTH, HEAD, TAIL, GND_1, GND_2, GND_3) if p is not No
 
 # Claim/initialize
 for pin in motor_pins:
-    lgpio.gpio_claim_output(h, pin)
-    lgpio.gpio_write(h, pin, 0)
+    try:
+        lgpio.gpio_claim_output(h, pin)
+        lgpio.gpio_write(h, pin, 0)
+    except lgpio.error as e:
+        if "GPIO busy" in str(e) or "busy" in str(e).lower():
+            # Pin is already claimed (likely from a previous crashed instance)
+            # Try to free it first, then claim it again
+            logger.warning(
+                f"GPIO pin {pin} is busy, attempting to free and reclaim...", "⚠️"
+            )
+            try:
+                # Try to free the pin (may fail if not claimed by this handle, but worth trying)
+                with contextlib.suppress(lgpio.error, Exception):
+                    lgpio.gpio_free(h, pin)
+                # Wait a bit for the kernel to clean up
+                time.sleep(0.2)
+                # Now try to claim it again
+                lgpio.gpio_claim_output(h, pin)
+                lgpio.gpio_write(h, pin, 0)
+                logger.info(f"Successfully reclaimed GPIO pin {pin}", "✅")
+            except Exception as free_error:
+                logger.error(
+                    f"Failed to free/reclaim GPIO pin {pin}: {free_error}", "❌"
+                )
+                raise
+        else:
+            # Some other GPIO error - re-raise it
+            raise
 
 # === State ===
 _head_tail_lock = Lock()
@@ -65,7 +94,15 @@ _pwm = {pin: {"duty": 0, "since": None} for pin in motor_pins}
 
 def set_pwm(pin: int, duty: int):
     """Start/adjust PWM on pin and remember when it went active."""
-    lgpio.tx_pwm(h, pin, FREQ, int(duty))
+    global _gpio_active
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
+    try:
+        lgpio.tx_pwm(h, pin, FREQ, int(duty))
+    except (lgpio.error, Exception):
+        # Handle already closed or invalid - ignore during shutdown
+        _gpio_active = False
+        return
     if duty > 0:
         _pwm[pin]["duty"] = int(duty)
         _pwm[pin]["since"] = (
@@ -78,7 +115,15 @@ def set_pwm(pin: int, duty: int):
 
 def clear_pwm(pin: int):
     """Stop PWM on pin and clear active since timestamp."""
-    lgpio.tx_pwm(h, pin, FREQ, 0)
+    global _gpio_active
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
+    try:
+        lgpio.tx_pwm(h, pin, FREQ, 0)
+    except (lgpio.error, Exception):
+        # Handle already closed or invalid - ignore during shutdown
+        _gpio_active = False
+        return
     _pwm[pin]["duty"] = 0
     _pwm[pin]["since"] = None
 
@@ -86,16 +131,34 @@ def clear_pwm(pin: int):
 # === Motor Helpers ===
 def brake_motor(pin1, pin2=None):
     """Actively stop the channel: zero PWM and drive LOW."""
+    global _gpio_active
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     clear_pwm(pin1)
     if pin2 is not None:
         clear_pwm(pin2)
-        lgpio.gpio_write(h, pin2, 0)
-    lgpio.gpio_write(h, pin1, 0)
+        try:
+            lgpio.gpio_write(h, pin2, 0)
+        except (lgpio.error, Exception):
+            _gpio_active = False
+            return
+    try:
+        lgpio.gpio_write(h, pin1, 0)
+    except (lgpio.error, Exception):
+        _gpio_active = False
+        return
 
 
 def run_motor_async(pwm_pin, low_pin=None, speed_percent=100, duration=0.3, brake=True):
+    global _gpio_active
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     if low_pin is not None:
-        lgpio.gpio_write(h, low_pin, 0)
+        try:
+            lgpio.gpio_write(h, low_pin, 0)
+        except (lgpio.error, Exception):
+            _gpio_active = False
+            return
     set_pwm(pwm_pin, int(speed_percent))
     if brake:
         threading.Timer(duration, lambda: brake_motor(pwm_pin, low_pin)).start()
@@ -117,9 +180,17 @@ def move_head(state="on"):
     global head_out
 
     def _move_head_on():
+        global _gpio_active
+        if not _gpio_active:
+            return  # GPIO handle already closed, skip
         # Ensure opposite input is LOW if sharing a bridge (2-motor cases)
         # For 3-motor "new" layout, mate is hard GND so this is a no-op.
-        lgpio.gpio_write(h, TAIL, 0) if TAIL is not None else None
+        if TAIL is not None:
+            try:
+                lgpio.gpio_write(h, TAIL, 0)
+            except (lgpio.error, Exception):
+                _gpio_active = False
+                return
         set_pwm(HEAD, 80)
         time.sleep(0.5)
         set_pwm(HEAD, 100)  # stay extended
@@ -160,7 +231,22 @@ def move_tail_async(duration=0.3):
 
 def _articulation_multiplier():
     """Return direct articulation multiplier (1 = normal, higher = slower)."""
-    return max(0, min(10, float(MOUTH_ARTICULATION)))
+    try:
+        # Try to get mouth articulation from current persona
+        from .persona_manager import persona_manager
+
+        current_persona_data = persona_manager.get_current_persona_data()
+
+        if current_persona_data and current_persona_data.get('meta', {}).get(
+            'mouth_articulation'
+        ):
+            persona_articulation = current_persona_data['meta']['mouth_articulation']
+            return max(0, min(10, float(persona_articulation)))
+        # Fall back to global setting
+        return 5
+    except Exception as e:
+        # Fall back to global setting on error
+        return 5
 
 
 # === Mouth Sync ===
@@ -220,6 +306,9 @@ def _interlude_routine():
             time.sleep(random.uniform(0.25, 0.9))
         if random.random() < 0.9:
             move_head("on")
+            # Head movement during interlude (no logging needed)
+            # Auto-turn off head after max 3 seconds to prevent getting stuck
+            threading.Timer(5.0, lambda: move_head("off")).start()
     except Exception as e:
         print(f"⚠️ Interlude error: {e}")
 
@@ -258,29 +347,74 @@ def _mate_for(pin: int):
 
 def _stop_channel(pin: int):
     """Brake one channel safely (pin + its mate)."""
+    global _gpio_active
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     mate = _mate_for(pin)
     clear_pwm(pin)
-    lgpio.gpio_write(h, pin, 0)
+    try:
+        lgpio.gpio_write(h, pin, 0)
+    except (lgpio.error, Exception):
+        _gpio_active = False
+        return
     if mate is not None:
         clear_pwm(mate)
-        lgpio.gpio_write(h, mate, 0)
+        try:
+            lgpio.gpio_write(h, mate, 0)
+        except (lgpio.error, Exception):
+            _gpio_active = False
+            return
 
 
 def _pin_is_active(pin: int) -> bool:
     """Active if line is HIGH or PWM duty > 0."""
+    if not _gpio_active:
+        # If GPIO is inactive, only check PWM state
+        return _pwm.get(pin, {}).get("duty", 0) > 0
     try:
         if lgpio.gpio_read(h, pin) == 1:
             return True
-    except Exception:
+    except (lgpio.error, Exception):
+        # Handle might be closed, fall back to PWM state
         pass
     return _pwm.get(pin, {}).get("duty", 0) > 0
 
 
 def stop_all_motors():
-    print("🛑 Stopping all motors")
+    global _gpio_active
+    logger.info("Stopping all motors", "🛑")
+    if not _gpio_active:
+        return  # GPIO handle already closed, skip
     for pin in motor_pins:
         clear_pwm(pin)
-        lgpio.gpio_write(h, pin, 0)
+        try:
+            lgpio.gpio_write(h, pin, 0)
+        except (lgpio.error, Exception):
+            # Handle already closed or invalid - ignore during shutdown
+            _gpio_active = False
+            return
+
+
+def cleanup_gpio():
+    """Close GPIO chip handle to prevent memory corruption on shutdown."""
+    global _gpio_active
+    try:
+        _gpio_active = (
+            False  # Mark GPIO as inactive before closing to prevent new operations
+        )
+        stop_all_motors()  # This will now safely skip if handle is invalid
+        time.sleep(0.1)  # Give any pending timer threads a moment to check the flag
+
+        # Free all GPIO pins before closing the chip handle
+        for pin in motor_pins:
+            with contextlib.suppress(lgpio.error, Exception):
+                lgpio.gpio_free(h, pin)
+
+        with contextlib.suppress(lgpio.error, Exception):
+            lgpio.gpiochip_close(h)  # Handle might already be closed, ignore
+        logger.info("GPIO cleanup complete", "✅")
+    except Exception as e:
+        logger.warning(f"GPIO cleanup error: {e}", "⚠️")
 
 
 def is_motor_active():
@@ -304,8 +438,9 @@ def motor_watchdog():
                     since_on[pin] = now
                 else:
                     if (now - since_on[pin]) >= WATCHDOG_TIMEOUT_SEC:
-                        print(
-                            f"⏱️ Watchdog: pin {pin} active > {WATCHDOG_TIMEOUT_SEC}s → braking channel"
+                        logger.warning(
+                            f"Watchdog: pin {pin} active > {WATCHDOG_TIMEOUT_SEC}s → braking channel",
+                            "⏱️",
                         )
                         _stop_channel(pin)
                         since_on[pin] = None

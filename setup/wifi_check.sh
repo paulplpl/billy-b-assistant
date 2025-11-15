@@ -4,10 +4,24 @@
 
 LOG_TAG="BillyWiFiCheck"
 
-echo "[$LOG_TAG] Checking internet connectivity..."
+# Test override: set TEST_FORCE_OFFLINE=1 to force the "no internet" branch
+FORCE_OFFLINE=0
 
+# CLI flag
+for arg in "$@"; do
+  case "$arg" in
+    --force-offline) FORCE_OFFLINE=1 ;;
+  esac
+done
+
+# env var override
+if [ "${TEST_FORCE_OFFLINE:-0}" -eq 1 ]; then
+  FORCE_OFFLINE=1
+fi
+
+echo "[$LOG_TAG] Checking internet connectivity..."
 # Try to ping Google DNS
-if ping -c 1 -W 3 8.8.8.8 &> /dev/null; then
+if [ "$FORCE_OFFLINE" -eq 0 ] && ping -c 1 -W 3 8.8.8.8 &> /dev/null; then
     echo "[$LOG_TAG] Internet is available."
     sudo systemctl stop billy-wifi-setup.service
 else

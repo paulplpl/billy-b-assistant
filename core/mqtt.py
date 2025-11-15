@@ -1,9 +1,12 @@
+import asyncio
 import json
 import subprocess
+import threading
 
 import paho.mqtt.client as mqtt
 
 from .config import MQTT_HOST, MQTT_PASSWORD, MQTT_PORT, MQTT_USERNAME
+from .logger import logger
 from .movements import stop_all_motors
 
 
@@ -19,18 +22,18 @@ def on_connect(client, userdata, flags, rc):
     global mqtt_connected
     if rc == 0:
         mqtt_connected = True
-        print("🔌 MQTT connected successfully!")
+        logger.success("MQTT connected successfully!", "🔌")
         mqtt_send_discovery()
         client.subscribe("billy/command")
-        client.subscribe("billy/say")
+        client.subscribe("billy/say")  # single endpoint
     else:
-        print(f"⚠️ MQTT connection failed with code {rc}")
+        logger.warning(f"MQTT connection failed with code {rc}")
 
 
 def start_mqtt():
     global mqtt_client
     if not mqtt_available():
-        print("⚠️ MQTT not configured, skipping.")
+        logger.warning("MQTT not configured, skipping.")
         return
 
     mqtt_client = mqtt.Client()
@@ -42,7 +45,7 @@ def start_mqtt():
         mqtt_client.loop_start()
         mqtt_publish("billy/state", "idle", retain=True)
     except Exception as e:
-        print(f"❌ MQTT connection error: {e}")
+        logger.error(f"MQTT connection error: {e}")
 
 
 def stop_mqtt():
@@ -50,7 +53,7 @@ def stop_mqtt():
     if mqtt_client:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
-        print("\n🔌 MQTT disconnected.")
+        logger.info("MQTT disconnected.", "🔌")
 
 
 def mqtt_publish(topic, payload, retain=True, retry=True):
@@ -59,22 +62,24 @@ def mqtt_publish(topic, payload, retain=True, retry=True):
     if mqtt_available():
         if not mqtt_client or not mqtt_connected:
             if retry:
-                print("🔁 MQTT not connected. Trying to reconnect...")
+                logger.info("MQTT not connected. Trying to reconnect...", "🔁")
                 try:
                     mqtt_client.reconnect()
                     mqtt_connected = True
                 except Exception as e:
-                    print(f"\n❌ MQTT reconnect failed: {e}")
+                    logger.error(f"MQTT reconnect failed: {e}")
                     return
             else:
-                print(f"\n⚠️ MQTT not connected. Skipping publish {topic}={payload}")
+                logger.warning(
+                    f"MQTT not connected. Skipping publish {topic}={payload}"
+                )
                 return
 
         try:
             mqtt_client.publish(topic, payload, retain=retain)
-            print(f"📡 MQTT publish: {topic} = {payload} (retain={retain})")
+            logger.verbose(f"MQTT publish: {topic} = {payload} (retain={retain})", "📡")
         except Exception as e:
-            print(f"\n❌ MQTT publish failed: {e}")
+            logger.error(f"MQTT publish failed: {e}")
 
 
 def mqtt_send_discovery():
@@ -82,18 +87,20 @@ def mqtt_send_discovery():
     if not mqtt_client:
         return
 
+    device = {
+        "identifiers": ["billy_bass"],
+        "name": "Big Mouth Billy Bass",
+        "model": "Billy Bassistant",
+        "manufacturer": "ThingsFromThom",
+    }
+
     # Sensor for Billy's state
     payload_sensor = {
         "name": "Billy State",
         "unique_id": "billy_state",
         "state_topic": "billy/state",
         "icon": "mdi:fish",
-        "device": {
-            "identifiers": ["billy_bass"],
-            "name": "Big Mouth Billy Bass",
-            "model": "Billy Bassistant",
-            "manufacturer": "Thom Koopman",
-        },
+        "device": device,
     }
     mqtt_client.publish(
         "homeassistant/sensor/billy/state/config",
@@ -107,12 +114,7 @@ def mqtt_send_discovery():
         "unique_id": "billy_shutdown",
         "command_topic": "billy/command",
         "payload_press": "shutdown",
-        "device": {
-            "identifiers": ["billy_bass"],
-            "name": "Big Mouth Billy Bass",
-            "model": "Billy Bassistant",
-            "manufacturer": "Thom Koopman",
-        },
+        "device": device,
     }
     mqtt_client.publish(
         "homeassistant/button/billy/shutdown/config",
@@ -120,18 +122,14 @@ def mqtt_send_discovery():
         retain=True,
     )
 
+    # Single text entity
     payload_text_input = {
         "name": "Billy Say",
         "unique_id": "billy_say",
         "command_topic": "billy/say",
         "mode": "text",
         "max": 255,
-        "device": {
-            "identifiers": ["billy_bass"],
-            "name": "Big Mouth Billy Bass",
-            "model": "Billy Bassistant",
-            "manufacturer": "Thom Koopman",
-        },
+        "device": device,
     }
     mqtt_client.publish(
         "homeassistant/text/billy/say/config",
@@ -140,35 +138,100 @@ def mqtt_send_discovery():
     )
 
 
+# ----- Helpers ----------------------------------------------------------
+
+FORCE_OFF_TAGS = ("[[nochat]]", "[[announce-only]]", "[[one-shot]]", "[[no-follow-up]]")
+FORCE_ON_TAGS = ("[[chat]]", "[[follow-up]]")
+
+
+def _parse_say_payload(raw: str):
+    """
+    Accept raw text or JSON: {"text":"...", "interactive": true/false}
+    Plus inline flags inside text:
+      [[nochat]] / [[announce-only]] / [[one-shot]] / [[no-follow-up]] -> interactive=False
+      [[chat]] / [[follow-up]] -> interactive=True
+    Returns (clean_text, interactive: None|True|False)
+    """
+    s = raw.strip()
+    interactive = None
+    text = s
+
+    # JSON override (still single endpoint; optional for power-users)
+    try:
+        data = json.loads(s)
+        if isinstance(data, dict):
+            text = str(data.get("text", "")).strip()
+            if "interactive" in data:
+                interactive = bool(data["interactive"])
+    except json.JSONDecodeError:
+        pass
+
+    low = text.lower()
+
+    # Inline flags take precedence over JSON 'interactive'
+    for tag in FORCE_OFF_TAGS:
+        if tag in low:
+            interactive = False
+            text = re_sub_ignorecase(text, tag, "")
+
+    for tag in FORCE_ON_TAGS:
+        if tag in low:
+            interactive = True
+            text = re_sub_ignorecase(text, tag, "")
+
+    return text.strip(), interactive
+
+
+def re_sub_ignorecase(s: str, find: str, repl: str) -> str:
+    import re
+
+    return re.sub(re.escape(find), repl, s, flags=re.IGNORECASE)
+
+
+def _run_async(coro):
+    def _runner():
+        asyncio.run(coro)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
+# -----------------------------------------------------------------------
+
+
 def on_message(client, userdata, msg):
-    print(f" \n📩 MQTT message received: {msg.topic} = {msg.payload.decode()} ")
+    logger.verbose(f"MQTT message received: {msg.topic} = {msg.payload.decode()}", "📩")
     if msg.topic == "billy/command":
         command = msg.payload.decode().strip().lower()
         if command == "shutdown":
-            print("\n🛑 Shutdown command received over MQTT. Shutting down...")
+            logger.warning(
+                "Shutdown command received over MQTT. Shutting down...", "🛑"
+            )
             try:
                 stop_all_motors()
             except Exception as e:
-                print(f"\n⚠️ Error stopping motors: {e}")
+                logger.warning(f"Error stopping motors: {e}")
             stop_mqtt()
             subprocess.Popen(["sudo", "shutdown", "now"])
-    elif msg.topic == "billy/say":
+        return
+
+    if msg.topic == "billy/say":
         print(f"📩 Received SAY command: {msg.payload.decode()}")
 
         import asyncio
         import threading
 
-        from core.say import say
+        # 🔁 Lazy import here to avoid circular import with session.py
+        from .say import say
 
         try:
             text = msg.payload.decode().strip()
             if text:
 
                 def run_say():
-                    asyncio.run(say(text=text))
+                    asyncio.run(say(text=text))  # interactive=None -> AUTO follow-up
 
                 threading.Thread(target=run_say, daemon=True).start()
             else:
                 print("⚠️ SAY command received, but text was empty")
         except Exception as e:
-            print(f"❌ Failed to run say(): {e}")
+            logger.error(f"Failed to run say(): {e}")

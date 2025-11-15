@@ -14,6 +14,7 @@ import numpy as np
 import sounddevice as sd
 from scipy.signal import resample
 
+from . import movements
 from .config import (
     CHUNK_MS,
     MIC_PREFERENCE,
@@ -21,6 +22,7 @@ from .config import (
     SPEAKER_PREFERENCE,
     TEXT_ONLY_MODE,
 )
+from .logger import logger
 from .movements import (
     flap_from_pcm_chunk,
     interlude,
@@ -58,10 +60,10 @@ def detect_devices(debug=False):
 
     devices = sd.query_devices()
 
-    print("🔢 Enumerating audio devices...")
+    logger.info("Enumerating audio devices...", "🔢")
     for i, d in enumerate(devices):
         if debug:
-            print(
+            logger.verbose(
                 f"  {i}: {d['name']} (inputs: {d['max_input_channels']}, outputs: {d['max_output_channels']})"
             )
 
@@ -72,7 +74,7 @@ def detect_devices(debug=False):
                 or not MIC_PREFERENCE
             ):
                 MIC_DEVICE_INDEX = i
-                print(f"✔ Input device index {i} selected.")
+                logger.success(f"Input device index {i} selected.")
 
             MIC_RATE = int(d['default_samplerate'])
             MIC_CHANNELS = d['max_input_channels']
@@ -85,19 +87,18 @@ def detect_devices(debug=False):
                 or not SPEAKER_PREFERENCE
             ):
                 OUTPUT_DEVICE_INDEX = i
-                print(f"✔ Output device index {i} selected.")
+                logger.success(f"Output device index {i} selected.")
 
             OUTPUT_RATE = int(d['default_samplerate'])
             OUTPUT_CHANNELS = d['max_output_channels']
 
     if MIC_DEVICE_INDEX is None or (OUTPUT_DEVICE_INDEX is None and not TEXT_ONLY_MODE):
-        print("❌ No suitable input/output devices found.")
+        logger.error("No suitable input/output devices found.")
         sys.exit(1)
 
 
 def playback_worker(chunk_ms):
     global last_played_time
-    global head_out
     global song_start_time
 
     interlude_counter = 0
@@ -113,14 +114,14 @@ def playback_worker(chunk_ms):
         with sd.OutputStream(
             samplerate=48000, channels=2, dtype='int16', device=OUTPUT_DEVICE_INDEX
         ) as stream:
-            print("🔈 Output stream opened")
+            logger.info("Output stream opened", "🔈")
             while True:
                 item = playback_queue.get()
                 now = time.time()
 
                 if head_move_active and now >= head_move_end_time:
                     move_head("off")
-                    head_out = False
+                    movements.head_out = False
                     head_move_active = False
                     print("🛑 Head move ended")
 
@@ -129,13 +130,13 @@ def playback_worker(chunk_ms):
                     if now - song_start_time >= move_time:
                         head_move_queue.get()
                         move_head("on")
-                        head_out = True
+                        movements.head_out = True
                         head_move_active = True
                         head_move_end_time = now + move_duration
                         print(f"🐟 Head move started for {move_duration:.2f} seconds")
 
                 if item is None:
-                    print("🧵 Received stop signal, cleaning up.")
+                    logger.info("Received stop signal, cleaning up.", "🧵")
                     playback_queue.task_done()
                     break
 
@@ -160,21 +161,14 @@ def playback_worker(chunk_ms):
                         # print(f"[DEBUG] ⏱ elapsed: {elapsed_song_time:.2f}s | 🥁 adjusted: {adjusted_now:.2f}s | 🎯 next beat at {next_beat_time:.2f}s | 🐟 head_move_queue: {list(head_move_queue.queue)}")
 
                         if adjusted_now >= next_beat_time:
-                            if drums_peak > 1500 and not head_out:
+                            if drums_peak > 1500 and not movements.head_out:
                                 move_tail_async(duration=0.2)
                             drums_peak = 0
                             drums_peak_time = 0
                             next_beat_time += beat_length
 
                         mono = np.frombuffer(audio_chunk, dtype=np.int16)
-                        resampled = resample(
-                            mono, int(len(mono) * 48000 / 24000)
-                        ).astype(np.int16)
-                        stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-                        stereo = np.clip(
-                            stereo * PLAYBACK_VOLUME, -32768, 32767
-                        ).astype(np.int16)
-                        stream.write(stereo)
+                        stream.write(_resample_24k_mono_to_48k_stereo(mono))
 
                     elif mode == "tts":
                         chunk = item[1]
@@ -185,20 +179,14 @@ def playback_worker(chunk_ms):
                             if len(sub) == 0:
                                 continue
                             flap_from_pcm_chunk(sub, chunk_ms=chunk_ms)
-                            resampled = resample(
-                                sub, int(len(sub) * 48000 / 24000)
-                            ).astype(np.int16)
-                            stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-                            stereo = np.clip(
-                                stereo * PLAYBACK_VOLUME, -32768, 32767
-                            ).astype(np.int16)
-                            stream.write(stereo)
+                            stream.write(_resample_24k_mono_to_48k_stereo(sub))
 
                             interlude_counter += len(sub)
-                            if interlude_counter >= interlude_target:
-                                interlude()
-                                interlude_counter = 0
-                                interlude_target = random.randint(80000, 160000)
+                            interlude_counter, interlude_target = (
+                                _maybe_trigger_interlude(
+                                    interlude_counter, interlude_target
+                                )
+                            )
 
                 else:
                     chunk = item
@@ -209,26 +197,18 @@ def playback_worker(chunk_ms):
                         if len(sub) == 0:
                             continue
                         flap_from_pcm_chunk(sub, chunk_ms=chunk_ms)
-                        resampled = resample(sub, int(len(sub) * 48000 / 24000)).astype(
-                            np.int16
-                        )
-                        stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-                        stereo = np.clip(
-                            stereo * PLAYBACK_VOLUME, -32768, 32767
-                        ).astype(np.int16)
-                        stream.write(stereo)
+                        stream.write(_resample_24k_mono_to_48k_stereo(sub))
 
                         interlude_counter += len(sub)
-                        if interlude_counter >= interlude_target:
-                            interlude()
-                            interlude_counter = 0
-                            interlude_target = random.randint(80000, 160000)
+                        interlude_counter, interlude_target = _maybe_trigger_interlude(
+                            interlude_counter, interlude_target
+                        )
 
                 playback_queue.task_done()
                 last_played_time = time.time()
 
     except Exception as e:
-        print(f"❌ Playback stream failed: {e}")
+        logger.error(f"Playback stream failed: {e}")
     finally:
         playback_done_event.set()
 
@@ -251,7 +231,7 @@ def save_audio_to_wav(audio_bytes, filename):
         wf.setsampwidth(2)
         wf.setframerate(24000)
         wf.writeframes(audio_bytes)
-    print(f"🎨 Saved response audio to {full_path}")
+    logger.verbose(f"Saved response audio to {full_path}", "🎨")
 
 
 def rotate_and_save_response_audio(audio_bytes):
@@ -273,12 +253,25 @@ def handle_incoming_audio_chunk(audio_b64, buffer):
 
 
 def send_mic_audio(ws, samples, loop):
-    pcm = (
-        resample(samples, int(len(samples) * 24000 / MIC_RATE))
-        .astype(np.int16)
-        .tobytes()
-    )
     try:
+        # Ensure samples is a proper numpy array
+        if not isinstance(samples, np.ndarray):
+            samples = np.array(samples)
+
+        # Ensure samples is 1D
+        if samples.ndim > 1:
+            samples = samples.flatten()
+
+        # Check if samples is empty
+        if len(samples) == 0:
+            return
+
+        pcm = (
+            resample(samples, int(len(samples) * 24000 / MIC_RATE))
+            .astype(np.int16)
+            .tobytes()
+        )
+
         future = asyncio.run_coroutine_threadsafe(
             ws.send(
                 json.dumps({
@@ -289,10 +282,13 @@ def send_mic_audio(ws, samples, loop):
             loop,
         )
 
-        # Await the result; avoid race conditions.
-        future.result()
+        # Don't block on websocket send - let it complete asynchronously
+        # This significantly improves audio response latency
     except Exception as e:
-        print(f"❌ Failed to send audio chunk: {e}")
+        logger.error(f"Failed to send audio chunk: {e}")
+        logger.error(
+            f"Samples type: {type(samples)}, shape: {getattr(samples, 'shape', 'no shape')}"
+        )
 
 
 def enqueue_wav_to_playback(filepath):
@@ -315,31 +311,76 @@ def enqueue_wav_to_playback(filepath):
 
 def play_random_wake_up_clip():
     """Select and enqueue a random wake-up WAV file with mouth movement."""
-    # Check custom folder first
-    clips = glob.glob(os.path.join(WAKE_UP_DIR, "*.wav"))
+    clips = []
 
+    # First, try to get current persona and check appropriate directory
+    try:
+        from .persona_manager import persona_manager
+
+        current_persona = persona_manager.current_persona
+        if current_persona and current_persona != "default":
+            # For non-default personas, check persona-specific directory
+            persona_wakeup_dir = os.path.join("personas", current_persona, "wakeup")
+            if os.path.exists(persona_wakeup_dir):
+                clips = glob.glob(os.path.join(persona_wakeup_dir, "*.wav"))
+                if clips:
+                    print(f"🎭 Using wake-up clips from persona: {current_persona}")
+        elif current_persona == "default":
+            # For default persona, use the custom folder
+            clips = glob.glob(os.path.join(WAKE_UP_DIR, "*.wav"))
+            if clips:
+                print("🔧 Using custom wake-up clips for default persona")
+    except Exception as e:
+        print(f"⚠️ Failed to get current persona: {e}")
+
+    # If no clips found yet, check custom folder as fallback
+    if not clips:
+        clips = glob.glob(os.path.join(WAKE_UP_DIR, "*.wav"))
+        if clips:
+            print("🔧 Using custom wake-up clips (fallback)")
+
+    # If still no clips, fall back to default
     if not clips:
         print("🔁 No custom clips found, falling back to default.")
         clips = glob.glob(os.path.join(WAKE_UP_DIR_DEFAULT, "*.wav"))
 
     if not clips:
-        print("⚠️ No wake-up clips found in either custom or default.")
+        print("⚠️ No wake-up clips found in any directory.")
         return None
 
     clip = random.choice(clips)
 
     # Track how many tasks were pending before enqueue
     already_pending = playback_queue.unfinished_tasks
+    logger.info(
+        f"🔧 Enqueuing wake-up clip: {os.path.basename(clip)}, already_pending={already_pending}",
+        "🔧",
+    )
 
     # Enqueue the WAV file
     enqueue_wav_to_playback(clip)
 
+    # Give the queue a moment to register the new tasks
+    time.sleep(0.05)
+
+    new_tasks = playback_queue.unfinished_tasks
+    logger.info(
+        f"🔧 After enqueue: unfinished_tasks={new_tasks} (added {new_tasks - already_pending} chunks)",
+        "🔧",
+    )
+
     # Wait for exactly those new chunks to finish
+    # Use a minimum wait to ensure at least some playback happens
+    start_time = time.time()
     while playback_queue.unfinished_tasks > already_pending:
         time.sleep(0.01)
 
+    elapsed = time.time() - start_time
+    logger.info(f"🔧 Wake-up sound playback completed in {elapsed:.2f}s", "🔧")
+
     # Once done, set the event
     playback_done_event.set()
+    logger.info("🔧 playback_done_event SET (wake-up sound finished)", "🔧")
 
     return clip
 
@@ -357,9 +398,9 @@ def stop_playback():
 
 def is_billy_speaking():
     """Return True if Billy is still playing audio."""
-    if not audio.playback_done_event.is_set():
+    if not playback_done_event.is_set():
         return True
-    return bool(not audio.playback_queue.empty())
+    return bool(not playback_queue.empty())
 
 
 def reset_for_new_song():
@@ -386,16 +427,47 @@ async def play_song(song_name):
     from core import audio
     from core.movements import stop_all_motors
     from core.mqtt import mqtt_publish
+    from core.song_manager import song_manager
 
     reset_for_new_song()
 
-    SONG_DIR = f"./sounds/songs/{song_name}"
+    # Use song manager to find the correct song path
+    song_metadata = song_manager.get_song_metadata(song_name)
+
+    # If not found by name, try to find by title
+    if not song_metadata:
+        songs = song_manager.list_songs()
+        for song in songs:
+            if song.get('title', '').lower() == song_name.lower():
+                song_metadata = song
+                break
+
+    if not song_metadata:
+        print(f"❌ Song not found: {song_name}")
+        print(f"💡 Tip: Use the web UI to copy example songs or create new ones")
+        return
+
+    # Get the actual song directory path using the song name (directory name)
+    actual_song_name = song_metadata['name']
+    if song_metadata.get('is_custom', True):
+        SONG_DIR = f"./custom_songs/{actual_song_name}"
+    else:
+        SONG_DIR = f"./sounds/songs/{actual_song_name}"
+
+    # Double-check the directory exists
+    if not os.path.exists(SONG_DIR):
+        print(f"❌ Song directory not found: {SONG_DIR}")
+        print(f"💡 Tip: Use the web UI to copy example songs or create new ones")
+        return
+
     MAIN_AUDIO = os.path.join(SONG_DIR, "full.wav")
     VOCALS_AUDIO = os.path.join(SONG_DIR, "vocals.wav")
     DRUMS_AUDIO = os.path.join(SONG_DIR, "drums.wav")
-    METADATA_FILE = os.path.join(SONG_DIR, "metadata.txt")
 
-    def load_metadata(path):
+    def load_metadata(song_dir):
+        """Load metadata from metadata.ini or fallback to metadata.txt"""
+        import configparser
+
         metadata = {
             "bpm": None,
             "head_moves": [],
@@ -404,11 +476,42 @@ async def play_song(song_name):
             "compensate_tail": 0.0,
             "half_tempo_tail_flap": False,
         }
-        if not os.path.exists(path):
-            print(f"⚠️ No metadata.txt found at {path}")
+
+        # Try new metadata.ini format first
+        metadata_ini = os.path.join(song_dir, "metadata.ini")
+        if os.path.exists(metadata_ini):
+            config = configparser.ConfigParser()
+            config.read(metadata_ini)
+
+            if config.has_section('SONG'):
+                metadata['bpm'] = config.getfloat('SONG', 'bpm', fallback=120.0)
+                metadata['gain'] = config.getfloat('SONG', 'gain', fallback=1.0)
+                metadata['tail_threshold'] = config.getfloat(
+                    'SONG', 'tail_threshold', fallback=1500.0
+                )
+                metadata['compensate_tail'] = config.getfloat(
+                    'SONG', 'compensate_tail', fallback=0.0
+                )
+                metadata['half_tempo_tail_flap'] = config.getboolean(
+                    'SONG', 'half_tempo_tail_flap', fallback=False
+                )
+
+                head_moves_str = config.get('SONG', 'head_moves', fallback='')
+                if head_moves_str:
+                    metadata['head_moves'] = [
+                        (float(v.split(':')[0]), float(v.split(':')[1]))
+                        for v in head_moves_str.split(',')
+                        if ':' in v
+                    ]
             return metadata
 
-        with open(path) as f:
+        # Fallback to old metadata.txt format
+        metadata_txt = os.path.join(song_dir, "metadata.txt")
+        if not os.path.exists(metadata_txt):
+            print(f"⚠️ No metadata found at {song_dir}")
+            return metadata
+
+        with open(metadata_txt) as f:
             for line in f:
                 if '=' in line:
                     key, value = line.strip().split('=', 1)
@@ -424,7 +527,7 @@ async def play_song(song_name):
         return metadata
 
     # --- Load metadata ---
-    metadata = load_metadata(METADATA_FILE)
+    metadata = load_metadata(SONG_DIR)
     GAIN = metadata.get("gain", 1.0)
     BPM = metadata.get("bpm", 120)
     tail_threshold = metadata.get("tail_threshold", 1500)
@@ -521,3 +624,20 @@ async def play_song(song_name):
         stop_all_motors()
         mqtt_publish("billy/state", "idle")
         print("🎶 Song finished, waiting for button press.")
+
+
+def _resample_24k_mono_to_48k_stereo(mono: np.ndarray) -> np.ndarray:
+    """Resample 24kHz mono int16 -> 48kHz stereo int16 with volume applied."""
+    resampled = resample(mono, int(len(mono) * 48000 / 24000)).astype(np.int16)
+    stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
+    return np.clip(stereo * PLAYBACK_VOLUME, -32768, 32767).astype(np.int16)
+
+
+def _maybe_trigger_interlude(
+    interlude_counter: int, interlude_target: int
+) -> tuple[int, int]:
+    if interlude_counter >= interlude_target:
+        interlude()
+        interlude_counter = 0
+        interlude_target = random.randint(80000, 160000)
+    return interlude_counter, interlude_target
