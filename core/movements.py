@@ -51,8 +51,34 @@ motor_pins = [p for p in (MOUTH, HEAD, TAIL, GND_1, GND_2, GND_3) if p is not No
 
 # Claim/initialize
 for pin in motor_pins:
-    lgpio.gpio_claim_output(h, pin)
-    lgpio.gpio_write(h, pin, 0)
+    try:
+        lgpio.gpio_claim_output(h, pin)
+        lgpio.gpio_write(h, pin, 0)
+    except lgpio.error as e:
+        if "GPIO busy" in str(e) or "busy" in str(e).lower():
+            # Pin is already claimed (likely from a previous crashed instance)
+            # Try to free it first, then claim it again
+            logger.warning(
+                f"GPIO pin {pin} is busy, attempting to free and reclaim...", "⚠️"
+            )
+            try:
+                # Try to free the pin (may fail if not claimed by this handle, but worth trying)
+                with contextlib.suppress(lgpio.error, Exception):
+                    lgpio.gpio_free(h, pin)
+                # Wait a bit for the kernel to clean up
+                time.sleep(0.2)
+                # Now try to claim it again
+                lgpio.gpio_claim_output(h, pin)
+                lgpio.gpio_write(h, pin, 0)
+                logger.info(f"Successfully reclaimed GPIO pin {pin}", "✅")
+            except Exception as free_error:
+                logger.error(
+                    f"Failed to free/reclaim GPIO pin {pin}: {free_error}", "❌"
+                )
+                raise
+        else:
+            # Some other GPIO error - re-raise it
+            raise
 
 # === State ===
 _head_tail_lock = Lock()
@@ -378,6 +404,12 @@ def cleanup_gpio():
         )
         stop_all_motors()  # This will now safely skip if handle is invalid
         time.sleep(0.1)  # Give any pending timer threads a moment to check the flag
+
+        # Free all GPIO pins before closing the chip handle
+        for pin in motor_pins:
+            with contextlib.suppress(lgpio.error, Exception):
+                lgpio.gpio_free(h, pin)
+
         with contextlib.suppress(lgpio.error, Exception):
             lgpio.gpiochip_close(h)  # Handle might already be closed, ignore
         logger.info("GPIO cleanup complete", "✅")
