@@ -858,6 +858,13 @@ class BillySession:
                         mqtt_publish("billy/state", "listening")
                         self.user_spoke_after_assistant = False
                         self.last_activity[0] = time.time()
+                    else:
+                        # No follow-up needed, close the session
+                        print(
+                            "🔁 Kickoff complete — no follow-up needed. Closing session."
+                        )
+                        await self.stop_session()
+                        return
             else:
                 if DEBUG_MODE:
                     logger.info(
