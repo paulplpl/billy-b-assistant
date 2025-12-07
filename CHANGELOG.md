@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.0.1] — 2025-12-07
+
+### Fixed
+
+- **MQTT Session Hanging**: Fixed issue where MQTT announcements without follow-up (e.g., "The washing machine is finished") would leave the session open indefinitely until hitting OpenAI's 60-minute timeout limit. Sessions now properly close when no follow-up is needed.
+
+---
+
 ## [2.0.0] — 2025-11-02
 >### 🎉 Major New Features:
 > User Profiles with memories - Multiple Personas - Custom Song Manager - Mqtt Say command support for follow-ups 
