@@ -4,10 +4,52 @@ import threading
 import time
 from concurrent.futures import CancelledError
 
-from gpiozero import Button
-
 from . import audio, config
 from .logger import logger
+
+try:
+    from gpiozero import Button
+    gpiozero_available = True
+except ImportError:
+    gpiozero_available = False
+
+if config.MOCKFISH or not gpiozero_available:
+    # Mock button in mockfish mode or if gpiozero not available
+    class MockButton:
+        def __init__(self, pin, pull_up=True):
+            self.pin = pin
+            self.when_pressed = None
+            self.is_pressed = False
+            if config.MOCKFISH:
+                logger.info(f"Mockfish: Button on pin {pin} mocked", "🐟")
+            elif not gpiozero_available:
+                logger.info(f"gpiozero not available: Button on pin {pin} mocked", "🐟")
+                # Start thread to listen for Enter key using pynput
+                import threading
+                threading.Thread(target=self._listen, daemon=True).start()
+
+        def _listen(self):
+            # Use fallback input() method for mock button
+            self._fallback_listen()
+
+        def _fallback_listen(self):
+            import sys
+            if not sys.stdin.isatty():
+                logger.warning("stdin is not a tty, mock button input not available", "⚠️")
+                return
+            while True:
+                try:
+                    user_input = input("Press Enter to simulate button press: ")
+                    if user_input == "":
+                        if self.when_pressed:
+                            self.when_pressed()
+                except (EOFError, KeyboardInterrupt):
+                    break
+
+        def close(self):
+            pass
+
+    Button = MockButton
 from .movements import move_head
 from .session import BillySession
 
@@ -146,5 +188,15 @@ def start_loop():
         "Ready. Press button to start a voice session. Press Ctrl+C to quit.", "🎦"
     )
     logger.info("Waiting for button press...", "🕐")
-    while True:
-        time.sleep(0.1)
+    if config.MOCKFISH:
+        logger.info("Mockfish mode: use Enter to simulate button press", "🐟")
+        try:
+            while True:
+                input("Press Enter to simulate button press: ")
+                button.is_pressed = True
+                on_button()
+        except KeyboardInterrupt:
+            pass
+    else:
+        while True:
+            time.sleep(0.1)

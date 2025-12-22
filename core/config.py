@@ -281,6 +281,7 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", "80"))
 SHOW_SUPPORT = os.getenv("SHOW_SUPPORT", True)
 FORCE_PASS_CHANGE = os.getenv("FORCE_PASS_CHANGE", "false").lower() == "true"
 SHOW_RC_VERSIONS = os.getenv("SHOW_RC_VERSIONS", "False")
+MOCKFISH = os.getenv("MOCKFISH", "false").lower() == "true"
 
 # === User Profile Config ===
 DEFAULT_USER = os.getenv("DEFAULT_USER", "guest").strip()
