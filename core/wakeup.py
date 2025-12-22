@@ -9,6 +9,7 @@ from typing import Optional
 import websockets.asyncio.client
 
 from .config import CUSTOM_INSTRUCTIONS, OPENAI_API_KEY, OPENAI_MODEL
+from .realtime_ai_provider import voice_provider_registry
 
 
 WAKEUP_DIR = os.path.abspath(
@@ -38,7 +39,6 @@ def get_wakeup_path(phrase: str) -> str:
 class WakeupClipGenerator:
     def __init__(self, *, voice: Optional[str] = None, persona_name: str = "default"):
         self.persona_name = persona_name
-        self.ws = None
 
         # Get voice from persona if not specified
         if voice:
@@ -51,9 +51,6 @@ class WakeupClipGenerator:
             except Exception:
                 self.voice = "ballad"  # Default voice
 
-    async def _send_json(self, payload: dict):
-        await self.ws.send(json.dumps(payload))
-
     async def generate(self, prompt: str, index: int) -> str:
         # Use appropriate directory based on persona
         if self.persona_name == "default":
@@ -64,89 +61,39 @@ class WakeupClipGenerator:
             persona_wakeup_dir = get_persona_wakeup_dir(self.persona_name)
             path = os.path.join(persona_wakeup_dir, f"{index}.wav")
 
-        uri = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-        }
+        provider = voice_provider_registry.get_provider()
 
-        print(f"🔊 Connecting to OpenAI realtime for: {prompt} → {index}")
+        print(f"🔊 Generating wakeup clip for: {prompt} → {index}")
 
+        # Get current persona instructions
         try:
-            async with websockets.asyncio.client.connect(
-                uri, additional_headers=headers
-            ) as ws:
-                self.ws = ws
-                # Get current persona instructions
-                try:
-                    from .persona_manager import persona_manager
+            from .persona_manager import persona_manager
 
-                    persona_instructions = persona_manager.get_persona_instructions(
-                        self.persona_name
-                    )
-                except Exception:
-                    persona_instructions = CUSTOM_INSTRUCTIONS
+            persona_instructions = persona_manager.get_persona_instructions(
+                self.persona_name
+            )
+        except Exception:
+            persona_instructions = CUSTOM_INSTRUCTIONS
 
-                await self._send_json({
-                    "type": "session.update",
-                    "session": {
-                        "type": "realtime",
-                        "instructions": (
-                            "IMPORTANT: Always respond by speaking the exact user text out loud. Do not add, change or rephrase anything!\n\n"
-                            + persona_instructions
-                        ),
-                        "audio": {
-                            "input": {
-                                "format": {"type": "audio/pcm", "rate": 24000},
-                            },
-                            "output": {
-                                "format": {"type": "audio/pcm", "rate": 24000},
-                                "voice": self.voice,
-                            },
-                        },
-                    },
-                })
+        instructions = (
+            "IMPORTANT: Always respond by speaking the exact user text out loud. Do not add, change or rephrase anything!\n\n"
+            + persona_instructions
+        )
 
-                await self._send_json({
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "message",
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": "Repeat this literal message:" + prompt,
-                            }
-                        ],
-                    },
-                })
+        audio_bytes = await provider.generate_audio_clip(
+            prompt="Repeat this literal message:" + prompt,
+            voice=self.voice,
+            instructions=instructions
+        )
 
-                await self._send_json({"type": "response.create"})
+        with wave.open(path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(24000)
+            wf.writeframes(audio_bytes)
 
-                audio_bytes = bytearray()
-                async for message in ws:
-                    data = json.loads(message)
-                    t = data.get("type") or ""
-                    if t in {"response.output_audio", "response.output_audio.delta"}:
-                        b64 = data.get("audio") or data.get("delta")
-                        if b64:
-                            audio_bytes.extend(base64.b64decode(b64))
-                    elif t == "response.done":
-                        break
-
-                if not audio_bytes:
-                    raise RuntimeError("No audio data received from OpenAI.")
-
-                with wave.open(path, "wb") as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(24000)
-                    wf.writeframes(audio_bytes)
-
-                print(f"✅ Saved wakeup clip: {path}")
-                return path
-
-        finally:
-            self.ws = None
+        print(f"✅ Saved wakeup clip: {path}")
+        return path
 
 
 def generate_wake_clip_async(prompt, index, persona_name="default"):
