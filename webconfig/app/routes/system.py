@@ -183,10 +183,8 @@ def get_config():
     config_data = {k: str(getattr(core_config, k, "")) for k in CONFIG_KEYS}
 
     # Add voice options from the current provider
-    print(f"DEBUG: Available providers: {voice_provider_registry.get_available_providers()}")
     current_provider = voice_provider_registry.get_provider()
     voices = current_provider.get_supported_voices()
-    print(f"DEBUG: VOICE_OPTIONS: {voices}")
     config_data["VOICE_OPTIONS"] = voices
 
     # Add user profile information

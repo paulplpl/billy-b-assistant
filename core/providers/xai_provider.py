@@ -1,19 +1,17 @@
+import asyncio
 import json
-
 from typing import Optional, Any
 
 from ..realtime_ai_provider import RealtimeAIProvider
 
 
-class OpenAIProvider(RealtimeAIProvider):
+class XAIProvider(RealtimeAIProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-realtime-mini",
         voice: Optional[str] = None,
     ):
         self.api_key = api_key
-        self.model = model
         if voice and voice in self.get_supported_voices():
             self.voice = voice
         else:
@@ -21,7 +19,16 @@ class OpenAIProvider(RealtimeAIProvider):
 
     @property
     def default_voice(self) -> str:
-        return "ballad"
+        return "Rex"
+
+    def _get_websocket_uri(self) -> str:
+        return "wss://api.x.ai/v1/realtime"
+
+    def get_supported_voices(self) -> list[str]:
+        return ["Ara", "Rex", "Sal", "Eve", "Leo"]
+
+    def get_provider_name(self) -> str:
+        return "xai"
 
     async def generate_audio_clip(
         self,
@@ -33,7 +40,7 @@ class OpenAIProvider(RealtimeAIProvider):
         if voice is None:
             voice = self.default_voice
 
-        # kwargs reserved for future use
+        # Reserve kwargs for future use
         _ = kwargs
 
         ws = await self._connect_websocket()
@@ -47,7 +54,7 @@ class OpenAIProvider(RealtimeAIProvider):
                 json.dumps({
                     "type": "session.update",
                     "session": {
-                        "type": "realtime",
+                        "voice": voice,
                         "instructions": session_instructions,
                         "audio": {
                             "input": {
@@ -55,7 +62,6 @@ class OpenAIProvider(RealtimeAIProvider):
                             },
                             "output": {
                                 "format": {"type": "audio/pcm", "rate": 24000},
-                                "voice": voice,
                             },
                         },
                     },
@@ -80,35 +86,17 @@ class OpenAIProvider(RealtimeAIProvider):
             )
 
             # Create response
-            await ws.send(json.dumps({"type": "response.create"}))
+            await ws.send(
+                json.dumps({"type": "response.create", "response": ["text", "audio"]})
+            )
 
             # Collect audio
             audio_bytes = await self._collect_audio_response(ws)
 
             if not audio_bytes:
-                raise RuntimeError("No audio data received from OpenAI.")
+                raise RuntimeError("No audio data received from XAI.")
 
             return audio_bytes
-
-    def get_supported_voices(self) -> list[str]:
-        return [
-            "alloy",
-            "ash",
-            "ballad",
-            "echo",
-            "sage",
-            "shimmer",
-            "verse",
-            "marin",
-            "cedar",
-        ]
-
-    def get_provider_name(self) -> str:
-        return "openai"
-
-    # Private methods
-    def _get_websocket_uri(self) -> str:
-        return f"wss://api.openai.com/v1/realtime?model={self.model}"
 
     def _get_headers(self) -> dict[str, str]:
         return {
@@ -118,37 +106,33 @@ class OpenAIProvider(RealtimeAIProvider):
     def _get_initial_session_config(
         self, instructions: str, tools: list[dict], **kwargs
     ) -> dict[str, Any]:
-        server_vad_params = dict(kwargs.get("server_vad_params", {}))
-        text_only_mode = bool(kwargs.get("text_only_mode", False))
-        voice = str(kwargs.get("voice", self.default_voice))
+        server_vad_params = kwargs.get("server_vad_params", {})
+        text_only_mode = kwargs.get("text_only_mode", False)
+        requested_voice = kwargs.get("voice", self.default_voice)
+        # Validate voice is supported, otherwise use default
+        voice = requested_voice if requested_voice in self.get_supported_voices() else self.default_voice
 
-        audio_config = {
-            "input": {
-                "format": {"type": "audio/pcm", "rate": 24000},
-                "turn_detection": {
-                    "type": "server_vad",
-                    **server_vad_params,
-                    "create_response": True,
-                    "interrupt_response": True,
-                },
+        session_config = {
+            "voice": voice,
+            "instructions": instructions,
+            "turn_detection": {
+                "type": "server_vad",
+                **server_vad_params,
+                "create_response": True,
+                "interrupt_response": True,
+            },
+            "audio": {
+                "input": {"format": {"type": "audio/pcm", "rate": 24000}},
+                "output": {"format": {"type": "audio/pcm", "rate": 24000}} if not text_only_mode else {},
             },
         }
 
-        if not text_only_mode:
-            audio_config["output"] = {
-                "format": {"type": "audio/pcm", "rate": 24000},
-                "voice": voice,
-                "speed": 1.0,
-            }
+        if tools:
+            session_config["tools"] = tools
 
         return {
             "type": "session.update",
-            "session": {
-                "type": "realtime",
-                "instructions": instructions,
-                "tools": tools,
-                "audio": audio_config,
-            },
+            "session": session_config,
         }
 
     # Abstract method implementations
@@ -164,5 +148,13 @@ class OpenAIProvider(RealtimeAIProvider):
         await ws.send(json.dumps(payload))
 
     def get_provider_tools(self) -> list[dict]:
-        # OpenAI doesn't have provider-specific tools beyond the base ones
-        return []
+        # XAI server-side tools
+        return [
+            {
+                "type": "web_search",
+            },
+            {
+                "type": "x_search",
+                "allowed_x_handles": ["elonmusk", "xai"],
+            },
+        ]

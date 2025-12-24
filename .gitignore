@@ -6,6 +6,9 @@ __pycache__/
 # Response history audio files
 sounds/response-history/
 
+# grok 
+.grok
+
 # MACOS-SPECIFIC FILES
 ## General
 .DS_Store
