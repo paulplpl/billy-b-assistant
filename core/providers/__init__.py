@@ -1,13 +1,15 @@
+from ..logger import logger
+
+logger.verbose("Importing core.providers")
 # Register realtime AI providers
-print("DEBUG: Importing core.providers")
 from .openai_provider import OpenAIProvider
 from .xai_provider import XAIProvider
 from ..realtime_ai_provider import voice_provider_registry
 from ..config import OPENAI_API_KEY, OPENAI_MODEL, REALTIME_AI_PROVIDER, XAI_API_KEY
 
-print(f"DEBUG: OPENAI_API_KEY set: {bool(OPENAI_API_KEY)}")
-print(f"DEBUG: XAI_API_KEY set: {bool(XAI_API_KEY)}")
-print(f"DEBUG: REALTIME_AI_PROVIDER: {REALTIME_AI_PROVIDER}")
+logger.verbose(f"OPENAI_API_KEY set: {bool(OPENAI_API_KEY)}")
+logger.verbose(f"XAI_API_KEY set: {bool(XAI_API_KEY)}")
+logger.verbose(f"REALTIME_AI_PROVIDER: {REALTIME_AI_PROVIDER}")
 
 if OPENAI_API_KEY:
     openai_provider = OpenAIProvider(api_key=OPENAI_API_KEY, model=OPENAI_MODEL)

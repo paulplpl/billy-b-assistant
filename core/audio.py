@@ -53,12 +53,27 @@ song_mode = False
 beat_length = 0.5
 compensate_tail_beats = 0.0
 
+PROVIDER_MIC_RATE = 24000
+PROVIDER_OUTPUT_RATE = 24000
+
+
+def _pick_mic_rate(device_index: int, channels: int, preferred_rate=PROVIDER_MIC_RATE):
+    for rate in [preferred_rate, 48000, 44100]:
+        try:
+            sd.check_input_settings(
+                device=device_index, samplerate=rate, channels=channels
+            )
+        except Exception:
+            continue
+        return rate
+    raise RuntimeError("Failed to pick mic rate")
+
 
 def detect_devices(debug=False):
     global MIC_DEVICE_INDEX, MIC_RATE, MIC_CHANNELS, CHUNK_SIZE
     global OUTPUT_DEVICE_INDEX, OUTPUT_RATE, OUTPUT_CHANNELS
 
-    devices = sd.query_devices()
+    devices: sd.DeviceList = sd.query_devices()
 
     logger.info("Enumerating audio devices...", "🔢")
     for i, d in enumerate(devices):
@@ -76,8 +91,13 @@ def detect_devices(debug=False):
                 MIC_DEVICE_INDEX = i
                 logger.success(f"Input device index {i} selected.")
 
-            MIC_RATE = int(d['default_samplerate'])
             MIC_CHANNELS = d['max_input_channels']
+            MIC_RATE = _pick_mic_rate(i, MIC_CHANNELS)
+            if MIC_RATE != PROVIDER_MIC_RATE:
+                logger.warning(
+                    f"Mic does not support {PROVIDER_MIC_RATE}Hz; "
+                    f"using {MIC_RATE}Hz and resampling to {PROVIDER_MIC_RATE}Hz."
+                )
             CHUNK_SIZE = int(MIC_RATE * CHUNK_MS / 1000)
 
         if OUTPUT_DEVICE_INDEX is None and d['max_output_channels'] > 0:
@@ -173,7 +193,7 @@ def playback_worker(chunk_ms):
                     elif mode == "tts":
                         chunk = item[1]
                         mono = np.frombuffer(chunk, dtype=np.int16)
-                        chunk_len = int(24000 * chunk_ms / 1000)
+                        chunk_len = int(PROVIDER_OUTPUT_RATE * chunk_ms / 1000)
                         for i in range(0, len(mono), chunk_len):
                             sub = mono[i : i + chunk_len]
                             if len(sub) == 0:
@@ -191,7 +211,7 @@ def playback_worker(chunk_ms):
                 else:
                     chunk = item
                     mono = np.frombuffer(chunk, dtype=np.int16)
-                    chunk_len = int(24000 * chunk_ms / 1000)
+                    chunk_len = int(PROVIDER_OUTPUT_RATE * chunk_ms / 1000)
                     for i in range(0, len(mono), chunk_len):
                         sub = mono[i : i + chunk_len]
                         if len(sub) == 0:
@@ -229,7 +249,7 @@ def save_audio_to_wav(audio_bytes, filename):
     with wave.open(full_path, 'wb') as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
-        wf.setframerate(24000)
+        wf.setframerate(PROVIDER_OUTPUT_RATE)
         wf.writeframes(audio_bytes)
     logger.verbose(f"Saved response audio to {full_path}", "🎨")
 
@@ -266,11 +286,11 @@ def send_mic_audio(ws, samples, loop):
         if len(samples) == 0:
             return
 
-        pcm = (
-            resample(samples, int(len(samples) * 24000 / MIC_RATE))
-            .astype(np.int16)
-            .tobytes()
-        )
+        if MIC_RATE and MIC_RATE != PROVIDER_MIC_RATE:
+            # Normalize mic input to 24KHz for provider expectations.
+            target_len = int(len(samples) * PROVIDER_MIC_RATE / MIC_RATE)
+            samples = resample(samples.astype(np.float32), target_len).astype(np.int16)
+        pcm = samples.astype(np.int16).tobytes()
 
         future = asyncio.run_coroutine_threadsafe(
             ws.send(
@@ -295,13 +315,13 @@ def enqueue_wav_to_playback(filepath):
     """Reads a WAV file and enqueues its PCM audio data to the playback queue."""
     with wave.open(filepath, 'rb') as wf:
         if (
-            wf.getframerate() != 24000
+            wf.getframerate() != PROVIDER_OUTPUT_RATE
             or wf.getnchannels() != 1
             or wf.getsampwidth() != 2
         ):
-            raise ValueError("WAV file must be 24000 Hz, mono, 16-bit")
+            raise ValueError(f"WAV file must be {PROVIDER_OUTPUT_RATE}Hz, mono, 16-bit")
 
-        chunk_size = int(24000 * CHUNK_MS / 1000)
+        chunk_size = int(PROVIDER_OUTPUT_RATE * CHUNK_MS / 1000)
         while True:
             frames = wf.readframes(chunk_size)
             if not frames:
