@@ -614,6 +614,15 @@ Please check the [existing issues](https://github.com/Thokoop/billy-b-assistant/
 
 ---
 
+# MockFish Mode 
+
+MockFish is a development and testing mode designed for this project, eliminating 
+the need for a physical Billy Bass fish. Motor movements are simulated, and the 
+local device's microphone and speakers are utilized. This mode is particularly useful
+for testing new GUI features, integrating new AI providers, and evaluating personality behaviors.
+
+---
+
 # Support the Project
 
 Billy B-Assistant is a project built and maintained for fun and experimentation, free for **personal** and **educational** use.
