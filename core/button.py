@@ -6,9 +6,11 @@ from concurrent.futures import CancelledError
 
 from . import audio, config
 from .logger import logger
+from .movements import move_head, move_tail
 
 try:
     from gpiozero import Button
+
     gpiozero_available = True
 except ImportError:
     gpiozero_available = False
@@ -26,6 +28,7 @@ if config.MOCKFISH or not gpiozero_available:
                 logger.info(f"gpiozero not available: Button on pin {pin} mocked", "🐟")
                 # Start thread to listen for Enter key using pynput
                 import threading
+
                 threading.Thread(target=self._listen, daemon=True).start()
 
         def _listen(self):
@@ -34,8 +37,11 @@ if config.MOCKFISH or not gpiozero_available:
 
         def _fallback_listen(self):
             import sys
+
             if not sys.stdin.isatty():
-                logger.warning("stdin is not a tty, mock button input not available", "⚠️")
+                logger.warning(
+                    "stdin is not a tty, mock button input not available", "⚠️"
+                )
                 return
             while True:
                 try:
@@ -183,6 +189,18 @@ def on_button():
 
 def start_loop():
     audio.detect_devices(debug=config.DEBUG_MODE)
+
+    logger.info("Starting Billy startup animation", "🎭")
+    move_head("on")
+    time.sleep(0.5)
+    move_tail(0.3)
+    move_tail(0.3)
+    move_head("off")
+    time.sleep(0.5)
+    move_tail(0.3)
+    move_tail(0.3)
+    logger.info("Billy startup animation complete", "✅")
+
     button.when_pressed = on_button
     logger.info(
         "Ready. Press button to start a voice session. Press Ctrl+C to quit.", "🎦"
