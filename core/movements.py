@@ -5,11 +5,53 @@ import threading
 import time
 from threading import Lock, Thread
 
-import lgpio
 import numpy as np
 
-from .config import BILLY_PINS, is_classic_billy
+from .config import BILLY_PINS, MOCKFISH, is_classic_billy
 from .logger import logger
+
+
+try:
+    import lgpio
+
+    lgpio_available = True
+except ImportError:
+    lgpio_available = False
+
+if MOCKFISH or not lgpio_available:
+    # Mock lgpio for development or when not available
+    class MockLgpio:
+        error = Exception
+
+        @staticmethod
+        def gpiochip_open(chip):
+            return "mock_handle"
+
+        @staticmethod
+        def gpio_claim_output(h, pin):
+            pass
+
+        @staticmethod
+        def gpio_write(h, pin, value):
+            pass
+
+        @staticmethod
+        def tx_pwm(h, pin, freq, duty):
+            pass
+
+        @staticmethod
+        def gpio_free(h, pin):
+            pass
+
+        @staticmethod
+        def gpiochip_close(h):
+            pass
+
+    lgpio = MockLgpio
+    if MOCKFISH:
+        logger.info("Mockfish: GPIO mocked for development", "🐟")
+    elif not lgpio_available:
+        logger.info("lgpio not available: GPIO mocked", "🐟")
 
 
 # === Configuration ===
