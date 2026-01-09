@@ -7,11 +7,13 @@ from threading import Lock, Thread
 
 import numpy as np
 
-from .config import BILLY_PINS, is_classic_billy, MOCKFISH
+from .config import BILLY_PINS, MOCKFISH, is_classic_billy
 from .logger import logger
+
 
 try:
     import lgpio
+
     lgpio_available = True
 except ImportError:
     lgpio_available = False

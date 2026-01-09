@@ -7,8 +7,10 @@ from concurrent.futures import CancelledError
 from . import audio, config
 from .logger import logger
 
+
 try:
     from gpiozero import Button
+
     gpiozero_available = True
 except ImportError:
     gpiozero_available = False
@@ -26,6 +28,7 @@ if config.MOCKFISH or not gpiozero_available:
                 logger.info(f"gpiozero not available: Button on pin {pin} mocked", "🐟")
                 # Start thread to listen for Enter key using pynput
                 import threading
+
                 threading.Thread(target=self._listen, daemon=True).start()
 
         def _listen(self):
@@ -34,15 +37,17 @@ if config.MOCKFISH or not gpiozero_available:
 
         def _fallback_listen(self):
             import sys
+
             if not sys.stdin.isatty():
-                logger.warning("stdin is not a tty, mock button input not available", "⚠️")
+                logger.warning(
+                    "stdin is not a tty, mock button input not available", "⚠️"
+                )
                 return
             while True:
                 try:
                     user_input = input("Press Enter to simulate button press: ")
-                    if user_input == "":
-                        if self.when_pressed:
-                            self.when_pressed()
+                    if user_input == "" and self.when_pressed:
+                        self.when_pressed()
                 except (EOFError, KeyboardInterrupt):
                     break
 
