@@ -58,6 +58,7 @@ CONFIG_KEYS = [
     "DEFAULT_USER",
     "CURRENT_USER",
     "SHOW_RC_VERSIONS",
+    "FLAP_ON_BOOT",
 ]
 
 

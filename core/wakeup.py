@@ -1,14 +1,10 @@
 import asyncio
-import base64
-import json
 import os
 import re
 import wave
 from typing import Optional
 
-import websockets.asyncio.client
-
-from .config import CUSTOM_INSTRUCTIONS, OPENAI_API_KEY, OPENAI_MODEL
+from .config import CUSTOM_INSTRUCTIONS
 from .realtime_ai_provider import voice_provider_registry
 
 
@@ -83,7 +79,7 @@ class WakeupClipGenerator:
         audio_bytes = await provider.generate_audio_clip(
             prompt="Repeat this literal message:" + prompt,
             voice=self.voice,
-            instructions=instructions
+            instructions=instructions,
         )
 
         with wave.open(path, "wb") as wf:

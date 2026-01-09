@@ -190,16 +190,17 @@ def on_button():
 def start_loop():
     audio.detect_devices(debug=config.DEBUG_MODE)
 
-    logger.info("Starting Billy startup animation", "🎭")
-    move_head("on")
-    time.sleep(0.5)
-    move_tail(0.3)
-    move_tail(0.3)
-    move_head("off")
-    time.sleep(0.5)
-    move_tail(0.3)
-    move_tail(0.3)
-    logger.info("Billy startup animation complete", "✅")
+    if config.FLAP_ON_BOOT:
+        logger.info("Starting Billy startup animation", "🎭")
+        move_head("on")
+        time.sleep(0.5)
+        move_tail(0.3)
+        move_tail(0.3)
+        move_head("off")
+        time.sleep(0.5)
+        move_tail(0.3)
+        move_tail(0.3)
+        logger.info("Billy startup animation complete", "✅")
 
     button.when_pressed = on_button
     logger.info(

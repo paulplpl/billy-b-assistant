@@ -1,6 +1,5 @@
 import json
-
-from typing import Optional, Any
+from typing import Any, Optional
 
 from ..realtime_ai_provider import RealtimeAIProvider
 

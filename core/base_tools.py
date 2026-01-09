@@ -3,12 +3,13 @@ Base tools that work with any realtime conversation provider.
 These are the custom Billy functions.
 """
 
-from typing import List, Dict, Any
+from typing import Any
+
 from .config import PERSONALITY
 from .song_manager import song_manager
 
 
-def get_base_tools() -> List[Dict[str, Any]]:
+def get_base_tools() -> list[dict[str, Any]]:
     """Get the base tools that work with any provider"""
     return [
         {
@@ -100,7 +101,7 @@ def get_base_tools() -> List[Dict[str, Any]]:
     ]
 
 
-def get_user_tools() -> List[Dict[str, Any]]:
+def get_user_tools() -> list[dict[str, Any]]:
     """Get user-specific tools (only available when not in guest mode)"""
     return [
         {

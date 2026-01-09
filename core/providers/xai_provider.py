@@ -1,6 +1,5 @@
-import asyncio
 import json
-from typing import Optional, Any
+from typing import Any, Optional
 
 from ..realtime_ai_provider import RealtimeAIProvider
 
@@ -110,7 +109,11 @@ class XAIProvider(RealtimeAIProvider):
         text_only_mode = kwargs.get("text_only_mode", False)
         requested_voice = kwargs.get("voice", self.default_voice)
         # Validate voice is supported, otherwise use default
-        voice = requested_voice if requested_voice in self.get_supported_voices() else self.default_voice
+        voice = (
+            requested_voice
+            if requested_voice in self.get_supported_voices()
+            else self.default_voice
+        )
 
         session_config = {
             "voice": voice,
@@ -123,7 +126,9 @@ class XAIProvider(RealtimeAIProvider):
             },
             "audio": {
                 "input": {"format": {"type": "audio/pcm", "rate": 24000}},
-                "output": {"format": {"type": "audio/pcm", "rate": 24000}} if not text_only_mode else {},
+                "output": {"format": {"type": "audio/pcm", "rate": 24000}}
+                if not text_only_mode
+                else {},
             },
         }
 

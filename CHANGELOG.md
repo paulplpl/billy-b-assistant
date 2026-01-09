@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.0.4] — 2025-01-10
+
+### Added
+
+- **Realtime AI Providers**: Introduced a `RealtimeAIProvider` abstraction with a provider registry to support multiple realtime AI backends (contribution by: @turekaj)
+- **XAI Provider (Beta)**: XAI support is currently beta and not fully integrated into the UI yet. For now, enable it by adding `REALTIME_AI_PROVIDER=xai` and `XAI_API_KEY=XAI API KEY HERE` to your `.env` file manually. (contribution by: @turekaj)
+- **Startup Flap Toggle**: Added `FLAP_ON_BOOT` setting and UI control to enable the startup flap animation only when desired. (contribution by: @turekaj)
+
+### Fixed
+
+- **Installation Documentation**: Added missing `swig` dependency to installation instructions. The `lgpio` Python package requires `swig` to build from source, which was causing installation failures.
+
+---
+
 ## [2.0.3] — 2025-01-09
 
 ### Added

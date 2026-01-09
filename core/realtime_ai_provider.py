@@ -1,8 +1,9 @@
-import json
 import base64
-import websockets.asyncio.client
+import json
 from abc import ABC, abstractmethod
-from typing import Optional, Any
+from typing import Any, Optional
+
+import websockets.asyncio.client
 
 
 class RealtimeAIProvider(ABC):

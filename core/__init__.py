@@ -1,2 +1,2 @@
 # Import providers to register them
-from . import providers
+from . import providers as providers

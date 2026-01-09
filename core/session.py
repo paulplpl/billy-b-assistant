@@ -11,6 +11,7 @@ import numpy as np
 import websockets.exceptions
 
 from . import audio
+from .base_tools import get_base_tools, get_user_tools
 from .config import (
     CHUNK_MS,
     DEBUG_MODE,
@@ -27,8 +28,6 @@ from .config import (
     TURN_EAGERNESS,
 )
 from .ha import send_conversation_prompt
-from .realtime_ai_provider import voice_provider_registry
-from .base_tools import get_base_tools, get_user_tools
 from .logger import logger
 from .mic import MicManager
 from .movements import move_tail_async, stop_all_motors
@@ -36,6 +35,7 @@ from .mqtt import mqtt_publish
 from .persona import update_persona_ini
 from .persona_manager import persona_manager
 from .profile_manager import user_manager
+from .realtime_ai_provider import voice_provider_registry
 from .song_manager import song_manager
 
 
@@ -402,15 +402,18 @@ class BillySession:
             # Try to fix common JSON issues
             try:
                 import re
+
                 fixed_json = raw_args
                 # Fix malformed JSON where colon appears inside quoted key: {"key:value"} -> {"key": "value"}
-                fixed_json = re.sub(r'{"([^"]*):([^"}]*)([}])', r'{"\1": \2\3', fixed_json)
+                fixed_json = re.sub(
+                    r'{"([^"]*):([^"}]*)([}])', r'{"\1": \2\3', fixed_json
+                )
                 # Handle boolean values
                 fixed_json = re.sub(r':(true|false)([},])', r': \1\2', fixed_json)
                 args = json.loads(fixed_json)
                 logger.info(
                     f"{tool_name}: fixed malformed JSON | original={raw_args!r} | fixed={fixed_json!r}",
-                    "🔧"
+                    "🔧",
                 )
                 return args
             except Exception as fix_e:
@@ -2021,7 +2024,7 @@ class BillySession:
             await self._ws_send_json({"type": "session.close"})
 
             # Trigger a new session start
-            # TODO: Implement session restart logic
+            # Pending: implement session restart logic
             await asyncio.sleep(1)  # Brief pause for graceful shutdown
 
         except Exception as e:

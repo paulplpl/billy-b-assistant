@@ -50,9 +50,6 @@ const SettingsForm = (() => {
         document.getElementById("config-form").addEventListener("submit", async function (e) {
             e.preventDefault();
 
-            const statusData = await ServiceStatus.fetchStatus();
-            const wasActive = statusData.status;
-
             const formData = new FormData(this);
             const payload = Object.fromEntries(formData.entries());
 
@@ -81,6 +78,14 @@ const SettingsForm = (() => {
                 payload.SHOW_RC_VERSIONS = 'True';
             } else {
                 payload.SHOW_RC_VERSIONS = 'False';
+            }
+
+            // Manually add FLAP_ON_BOOT value (only set to True when checked)
+            const flapOnBootCheckbox = document.getElementById("FLAP_ON_BOOT");
+            if (flapOnBootCheckbox && flapOnBootCheckbox.checked) {
+                payload.FLAP_ON_BOOT = 'True';
+            } else {
+                payload.FLAP_ON_BOOT = 'False';
             }
 
             let hostnameChanged = false;
@@ -135,7 +140,10 @@ const SettingsForm = (() => {
                         }
                     }
                 } else {
-                    throw new Error(refreshData.error || "Auto-refresh failed");
+                    console.error("Auto-refresh failed, falling back to restart:", refreshData.error || "Auto-refresh failed");
+                    await fetch("/restart-billy", {method: "POST"});
+                    showNotification("Settings saved – Billy restarted", "success");
+                    return;
                 }
             } catch (error) {
                 console.error("Auto-refresh failed, falling back to restart:", error);
@@ -234,5 +242,3 @@ const SettingsForm = (() => {
 
 // Make SettingsForm globally available
 window.SettingsForm = SettingsForm;
-
-
