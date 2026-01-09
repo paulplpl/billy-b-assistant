@@ -1,3 +1,14 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Response history audio files
+sounds/response-history/
+
+# grok 
+.grok
+
 # MACOS-SPECIFIC FILES
 ## General
 .DS_Store
