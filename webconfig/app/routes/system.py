@@ -1,5 +1,8 @@
 import os
 import subprocess
+
+# Import logger
+import sys
 import threading
 import time
 
@@ -8,7 +11,17 @@ from flask import Blueprint, jsonify, render_template, request
 from packaging.version import parse as parse_version
 
 from ..core_imports import core_config, voice_provider_registry
-from ..state import PROJECT_ROOT, RELEASE_NOTE, load_versions, save_versions
+from ..state import (
+    PROJECT_ROOT,
+    RELEASE_NOTE,
+    get_current_version,
+    load_versions,
+    save_versions,
+)
+
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from core.logger import logger
 
 
 bp = Blueprint("system", __name__)
@@ -79,21 +92,39 @@ def index():
 @bp.route("/version")
 def version_info():
     versions = load_versions()
-    current = versions["version"].get("current", "unknown")
+    # Always check the current checked-out version from git
+    current = get_current_version()
     latest = versions["version"].get("latest", "unknown")
+
+    logger.verbose(
+        f"[version_info] Detected current version: {current}, stored: {versions['version'].get('current', 'unknown')}, latest: {latest}"
+    )
+
+    # Update the stored current version if it's different
+    stored_current = versions["version"].get("current", "unknown")
+    if current != stored_current:
+        logger.info(
+            f"[version_info] Updating stored version from {stored_current} to {current}"
+        )
+        save_versions(current, latest)
+
     try:
         update_available = (
             current != "unknown"
             and latest != "unknown"
             and parse_version(latest.lstrip("v")) > parse_version(current.lstrip("v"))
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[version_info] Error checking update availability: {e}")
         update_available = False
-    return jsonify({
+
+    response = {
         "current": current,
         "latest": latest,
         "update_available": update_available,
-    })
+    }
+    logger.verbose(f"[version_info] Returning: {response}")
+    return jsonify(response)
 
 
 @bp.route("/update", methods=["POST"])
@@ -116,8 +147,10 @@ def perform_update():
             stderr=subprocess.STDOUT,
             text=True,
         )
-        print("📦 Pip install output:\n", output)
-        save_versions(latest, latest)
+        logger.info(f"📦 Pip install output:\n{output}")
+        # Refresh current version from git after checkout to ensure accuracy
+        actual_current = get_current_version()
+        save_versions(actual_current, latest)
         threading.Thread(
             target=lambda: (
                 time.sleep(2),

@@ -4,7 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.0.2] — 2025-12-17
+## [2.0.3] — 2025-01-09
+
+### Added
+
+- **Mockfish Development Mode**: Added `MOCKFISH` environment variable to enable development and testing without physical hardware. When enabled, GPIO operations and button presses are mocked, allowing full testing of Billy's functionality on any machine without a Raspberry Pi or physical Billy Bass. (contribution by: @turekaj)
+
+### Fixed
+
+- **Version Detection**: Fixed issue where the updater would show an incorrect version (e.g., v2.0.1) even when a newer tag (e.g., v2.0.2) was checked out. Improved version detection logic now properly handles detached HEAD state and uses multiple fallback methods (`git tag --points-at HEAD`, `git describe --tags --exact-match`, `git describe --tags`) to accurately detect the current checked-out version.
+- **Logging Integration**: Version detection and update processes now use the centralized logging system, respecting the `LOG_LEVEL` setting for appropriate verbosity.
+
+---
+
+## [2.0.2] — 2025-12-25
 
 ### Fixed
 

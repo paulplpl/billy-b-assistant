@@ -3,11 +3,18 @@ import json
 import os
 import shutil
 import subprocess
+
+# Import logger after path setup
+import sys
 import time
 from pathlib import Path
 
 from packaging.version import InvalidVersion
 from packaging.version import parse as parse_version
+
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from core.logger import logger
 
 
 WEBCONFIG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -36,16 +43,16 @@ def load_versions():
 
 def save_versions(current: str, latest: str):
     if not current or not latest:
-        print("[save_versions] Refusing to save empty version")
+        logger.warning("[save_versions] Refusing to save empty version")
         return
     try:
         parsed_current = parse_version(current.lstrip("v"))
         parsed_latest = parse_version(latest.lstrip("v"))
     except InvalidVersion as e:
-        print("[save_versions] Invalid version: ", e)
+        logger.warning(f"[save_versions] Invalid version: {e}")
         return
     if parsed_latest < parsed_current:
-        print(
+        logger.warning(
             f"[save_versions] Skipping downgrade from {parsed_current} to {parsed_latest}"
         )
         latest = current
@@ -57,23 +64,87 @@ def save_versions(current: str, latest: str):
 
 def get_current_version():
     try:
-        return subprocess.check_output(
+        # First, check if HEAD points to a tag directly (most reliable for detached HEAD)
+        tags = subprocess.check_output(
+            ["git", "tag", "--points-at", "HEAD"],
+            cwd=PROJECT_ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if tags:
+            # If multiple tags point to HEAD, return the one with highest version
+            tag_list = [t.strip() for t in tags.split('\n') if t.strip()]
+        if tag_list:
+            # Sort by version and return the highest
+            try:
+                tag_list.sort(key=lambda v: parse_version(v.lstrip("v")), reverse=True)
+                result = tag_list[0]
+                logger.verbose(
+                    f"[get_current_version] Found tag via --points-at: {result}"
+                )
+                return result
+            except Exception:
+                # If version parsing fails, just return the first one
+                result = tag_list[0]
+                logger.verbose(
+                    f"[get_current_version] Found tag via --points-at (unparsed): {result}"
+                )
+                return result
+    except subprocess.CalledProcessError:
+        pass
+    except Exception as e:
+        logger.debug(f"[get_current_version] Error checking --points-at: {e}")
+
+    try:
+        # Try to get exact tag match
+        result = subprocess.check_output(
             ["git", "describe", "--tags", "--exact-match"],
             cwd=PROJECT_ROOT,
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
+        if result:
+            logger.verbose(
+                f"[get_current_version] Found tag via --exact-match: {result}"
+            )
+            return result
     except subprocess.CalledProcessError:
-        try:
-            commit = subprocess.check_output(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=PROJECT_ROOT,
-                text=True,
-            ).strip()
-            return f"(commit {commit})"
-        except Exception as e:
-            print("[get_current_version] Failed:", e)
-            return "unknown"
+        pass
+    except Exception as e:
+        logger.debug(f"[get_current_version] Error checking --exact-match: {e}")
+
+    try:
+        # Try to get the nearest tag (with distance if not exact)
+        result = subprocess.check_output(
+            ["git", "describe", "--tags"],
+            cwd=PROJECT_ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if result:
+            # If it's an exact match, result is just the tag name
+            # If it has distance, it's like "v2.0.1-5-gabc123"
+            # For now, return as-is (the frontend can handle it)
+            logger.verbose(f"[get_current_version] Found via --tags: {result}")
+            return result
+    except subprocess.CalledProcessError:
+        pass
+    except Exception as e:
+        logger.debug(f"[get_current_version] Error checking --tags: {e}")
+
+    # Last resort: return commit hash
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            text=True,
+        ).strip()
+        result = f"(commit {commit})"
+        logger.verbose(f"[get_current_version] Using commit hash: {result}")
+        return result
+    except Exception as e:
+        logger.warning(f"[get_current_version] Failed: {e}")
+        return "unknown"
 
 
 def fetch_latest_tag():
@@ -88,18 +159,18 @@ def fetch_latest_tag():
         )
         data = json.loads(output)
         if isinstance(data, dict) and data.get("message"):
-            print(f"[fetch_latest_tag] GitHub error: {data['message']}")
+            logger.warning(f"[fetch_latest_tag] GitHub error: {data['message']}")
             return None
         if not isinstance(data, list):
-            print("[fetch_latest_tag] Unexpected response format")
+            logger.warning("[fetch_latest_tag] Unexpected response format")
             return None
         filtered = [tag["name"] for tag in data if "name" in tag]
         if filtered:
             return max(filtered, key=lambda v: parse_version(v.lstrip("v")))
-        print("[fetch_latest_tag] No tags found")
+        logger.warning("[fetch_latest_tag] No tags found")
         return None
     except Exception as e:
-        print("[fetch_latest_tag] Exception:", e)
+        logger.warning(f"[fetch_latest_tag] Exception: {e}")
         return None
 
 
@@ -122,7 +193,7 @@ def fetch_release_note_for_tag(tag: str):
             }
         return None
     except Exception as e:
-        print("[fetch_release_note_for_tag] Exception:", e)
+        logger.warning(f"[fetch_release_note_for_tag] Exception: {e}")
         return None
 
 
@@ -140,10 +211,12 @@ def bootstrap_versions_and_release_note():
             if note:
                 RELEASE_NOTE.update(note)
                 RELEASE_NOTE["fetched_at"] = int(time.time())
-                print(f"[release-note] Cached notes for {RELEASE_NOTE['tag']}")
+                logger.info(f"[release-note] Cached notes for {RELEASE_NOTE['tag']}")
             else:
-                print("[release-note] No notes found for tag:", tag_for_notes)
+                logger.verbose(
+                    f"[release-note] No notes found for tag: {tag_for_notes}"
+                )
         else:
-            print("[release-note] No tag available to fetch notes.")
+            logger.verbose("[release-note] No tag available to fetch notes.")
     except Exception as e:
-        print("[release-note] Bootstrap failed:", e)
+        logger.warning(f"[release-note] Bootstrap failed: {e}")
