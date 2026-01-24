@@ -43,7 +43,7 @@ from core.audio import playback_queue
 from core.logger import reload_log_level
 from core.movements import start_motor_watchdog
 from core.mqtt import start_mqtt, stop_mqtt
-
+from core.viz import start_viz, stop_viz
 
 current_level = reload_log_level()
 print(f"🔧 Log level set to: {current_level.name}")
@@ -70,8 +70,10 @@ def main():
     user_manager.load_default_user()
 
     threading.Thread(target=start_mqtt, daemon=True).start()
+    start_viz() #It already starts it in thread
     start_motor_watchdog()
     core.button.start_loop()
+
 
 
 if __name__ == "__main__":
@@ -84,4 +86,5 @@ if __name__ == "__main__":
 
         cleanup_gpio()
         stop_mqtt()
+        stop_viz()
         sys.exit(1)

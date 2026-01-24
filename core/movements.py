@@ -84,8 +84,8 @@ if BILLY_PINS == "legacy":
         GND_3 = 26  # tail mate (keep LOW)
 else:
     # NEW quiet wiring (mates are tied to GND in hardware)
-    HEAD = 22  # pin 15
-    MOUTH = 17  # pin 11
+    HEAD = 17  # pin 15
+    MOUTH = 22  # pin 11
     TAIL = 27  # pin 13
 
 # Collect all pins we actually use

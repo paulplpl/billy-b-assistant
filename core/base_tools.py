@@ -98,6 +98,34 @@ def get_base_tools() -> list[dict[str, Any]]:
                 "required": ["name", "confidence"],
             },
         },
+        #New tools
+        {
+        "name": "music_command",
+        "type": "function",
+        "description": "Control music playback on Billy via Home Assistant (through MQTT).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+            "action": {"type": "string", "enum": ["play","stop","pause","resume","next","prev","vol_up","vol_down","volume_set"]},
+            "query": {"type": "string"},
+            "step": {"type": "number"},
+            "level": {"type": "number"}
+            },
+            "required": ["action"]
+        }
+        },
+        {
+        "name": "web_lookup",
+        "type": "function",
+        "description": "Fetch up-to-date info from the internet for questions that need current data.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"}
+          },
+          "required": ["query"]
+        }
+        },
     ]
 
 

@@ -685,6 +685,18 @@ class BillySession:
         if name == "switch_persona":
             await self._handle_switch_persona(raw_args)
             return
+        if name == "music_command":
+            #Probaly need to create a method.
+            args = json.loads(raw_args or "{}")
+            payload = {
+                "action": args.get("action"),
+                "query": args.get("query", ""),
+                "step": args.get("step", 0.05),
+                "level": args.get("level"),
+            }
+            mqtt_publish("billy/music/cmd", json.dumps(payload))        
+
+
 
     async def _on_response_done(self, data: dict[str, Any]):
         error = data.get("status_details", {}).get("error")
