@@ -21,6 +21,11 @@ def logs():
             "--output=short",
         ])
         return jsonify({"logs": output.decode("utf-8")})
+    except FileNotFoundError:
+        # journalctl not available, return mock logs
+        return jsonify({
+            "logs": "Running in development mode - no systemd logs available"
+        })
     except subprocess.CalledProcessError as e:
         return jsonify({"logs": "Failed to retrieve logs", "error": str(e)}), 500
 
@@ -77,127 +82,129 @@ def service_status():
             ["systemctl", "is-active", "billy.service"], stderr=subprocess.STDOUT
         )
         service_status = output.decode("utf-8").strip()
+    except FileNotFoundError:
+        # systemctl not available (running manually), assume active
+        service_status = "active"
 
-        # Get comprehensive status including profiles and configuration
+    # Get comprehensive status including profiles and configuration
+    try:
+        import time
+
+        from dotenv import load_dotenv
+
+        from core.persona_manager import persona_manager
+        from core.profile_manager import user_manager
+
+        # Get project root and .env path
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        )
+        env_path = os.path.join(project_root, ".env")
+
+        # Reload .env to get latest values
+        load_dotenv(env_path)
+        current_user_name = (
+            os.getenv("CURRENT_USER", "").strip().strip("'\"")
+        )  # Remove quotes and whitespace
+        current_user = user_manager.get_current_user()
+
+        # Get .env file status
+        env_exists = os.path.exists(env_path)
+        env_modified = os.path.getmtime(env_path) if env_exists else 0
+
+        # Get memory count for current user
+        memory_count = 0
+        if current_user:
+            try:
+                memories = current_user.get_memories(
+                    100
+                )  # Get up to 100 memories to count
+                memory_count = len(memories)
+            except Exception as e:
+                print(f"Failed to get memory count: {e}")
+
+        # Get config hash to detect config changes
+        config_hash = None
         try:
-            import time
+            import hashlib
 
-            from dotenv import load_dotenv
+            from ..core_imports import core_config
 
-            from core.persona_manager import persona_manager
-            from core.profile_manager import user_manager
-
-            # Get project root and .env path
-            project_root = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            )
-            env_path = os.path.join(project_root, ".env")
-
-            # Reload .env to get latest values
-            load_dotenv(env_path)
-            current_user_name = (
-                os.getenv("CURRENT_USER", "").strip().strip("'\"")
-            )  # Remove quotes and whitespace
-            current_user = user_manager.get_current_user()
-
-            # Get .env file status
-            env_exists = os.path.exists(env_path)
-            env_modified = os.path.getmtime(env_path) if env_exists else 0
-
-            # Get memory count for current user
-            memory_count = 0
-            if current_user:
-                try:
-                    memories = current_user.get_memories(
-                        100
-                    )  # Get up to 100 memories to count
-                    memory_count = len(memories)
-                except Exception as e:
-                    print(f"Failed to get memory count: {e}")
-
-            # Get config hash to detect config changes
-            config_hash = None
-            try:
-                import hashlib
-
-                from ..core_imports import core_config
-
-                # Create a hash of key config values to detect changes
-                config_values = [
-                    str(getattr(core_config, k, ""))
-                    for k in [
-                        "SILENCE_THRESHOLD",
-                        "MIC_TIMEOUT_SECONDS",
-                        "DEFAULT_USER",
-                        "CURRENT_USER",
-                        "MOUTH_ARTICULATION",
-                    ]
+            # Create a hash of key config values to detect changes
+            config_values = [
+                str(getattr(core_config, k, ""))
+                for k in [
+                    "SILENCE_THRESHOLD",
+                    "MIC_TIMEOUT_SECONDS",
+                    "DEFAULT_USER",
+                    "CURRENT_USER",
+                    "MOUTH_ARTICULATION",
                 ]
-                config_string = "|".join(config_values)
-                config_hash = hashlib.md5(config_string.encode()).hexdigest()
-            except Exception as e:
-                print(f"Failed to get config hash: {e}")
-
-            # Get current personality traits
-            current_personality = None
-            try:
-                # Reload personality from disk to get latest changes from Billy
-                from core.persona import load_traits_from_ini
-
-                # Get current persona file path
-                current_persona = persona_manager.current_persona
-                if current_persona == "default":
-                    persona_ini_path = os.path.join(project_root, "persona.ini")
-                else:
-                    persona_ini_path = os.path.join(
-                        project_root, "personas", current_persona, "persona.ini"
-                    )
-                    if not os.path.exists(persona_ini_path):
-                        # Fall back to old structure
-                        persona_ini_path = os.path.join(
-                            project_root, "personas", f"{current_persona}.ini"
-                        )
-
-                # Load fresh traits from the file
-                traits = load_traits_from_ini(persona_ini_path)
-
-                current_personality = {
-                    "humor": traits.get("humor", 50),
-                    "sarcasm": traits.get("sarcasm", 50),
-                    "honesty": traits.get("honesty", 50),
-                    "respectfulness": traits.get("respectfulness", 50),
-                    "optimism": traits.get("optimism", 50),
-                    "confidence": traits.get("confidence", 50),
-                    "warmth": traits.get("warmth", 50),
-                    "curiosity": traits.get("curiosity", 50),
-                    "verbosity": traits.get("verbosity", 50),
-                    "formality": traits.get("formality", 50),
-                }
-            except Exception as e:
-                print(f"Failed to get current personality: {e}")
-
-            return jsonify({
-                "status": service_status,
-                "current_user": current_user_name,
-                "current_user_loaded": current_user.name if current_user else None,
-                "current_persona": persona_manager.current_persona,
-                "current_personality": current_personality,
-                "available_profiles": user_manager.list_all_users(),
-                "available_personas": persona_manager.get_available_personas(),
-                "memory_count": memory_count,
-                "config_hash": config_hash,
-                "env_file": {"exists": env_exists, "modified": env_modified},
-                "timestamp": time.time(),
-            })
+            ]
+            config_string = "|".join(config_values)
+            config_hash = hashlib.md5(config_string.encode()).hexdigest()
         except Exception as e:
-            # Fallback to basic service status if profile loading fails
-            return jsonify({
-                "status": service_status,
-                "error": f"Failed to load profile status: {str(e)}",
-            })
+            print(f"Failed to get config hash: {e}")
 
+        # Get current personality traits
+        current_personality = None
+        try:
+            # Reload personality from disk to get latest changes from Billy
+            from core.persona import load_traits_from_ini
+
+            # Get current persona file path
+            current_persona = persona_manager.current_persona
+            if current_persona == "default":
+                persona_ini_path = os.path.join(project_root, "persona.ini")
+            else:
+                persona_ini_path = os.path.join(
+                    project_root, "personas", current_persona, "persona.ini"
+                )
+                if not os.path.exists(persona_ini_path):
+                    # Fall back to old structure
+                    persona_ini_path = os.path.join(
+                        project_root, "personas", f"{current_persona}.ini"
+                    )
+
+            # Load fresh traits from the file
+            traits = load_traits_from_ini(persona_ini_path)
+
+            current_personality = {
+                "humor": traits.get("humor", 50),
+                "sarcasm": traits.get("sarcasm", 50),
+                "honesty": traits.get("honesty", 50),
+                "respectfulness": traits.get("respectfulness", 50),
+                "optimism": traits.get("optimism", 50),
+                "confidence": traits.get("confidence", 50),
+                "warmth": traits.get("warmth", 50),
+                "curiosity": traits.get("curiosity", 50),
+                "verbosity": traits.get("verbosity", 50),
+                "formality": traits.get("formality", 50),
+            }
+        except Exception as e:
+            print(f"Failed to get current personality: {e}")
+
+        return jsonify({
+            "status": service_status,
+            "current_user": current_user_name,
+            "current_user_loaded": current_user.name if current_user else None,
+            "current_persona": persona_manager.current_persona,
+            "current_personality": current_personality,
+            "available_profiles": user_manager.list_all_users(),
+            "available_personas": persona_manager.get_available_personas(),
+            "memory_count": memory_count,
+            "config_hash": config_hash,
+            "env_file": {"exists": env_exists, "modified": env_modified},
+            "timestamp": time.time(),
+        })
     except subprocess.CalledProcessError as e:
         return jsonify({"status": e.output.decode("utf-8").strip()})
+    except Exception as e:
+        # Fallback to basic service status if profile loading fails
+        return jsonify({
+            "status": service_status,
+            "error": f"Failed to load profile status: {str(e)}",
+        })
 
 
 @bp.route("/reboot", methods=["POST"])

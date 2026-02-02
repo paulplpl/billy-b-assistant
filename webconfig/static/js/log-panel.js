@@ -279,6 +279,31 @@ const LogPanel = (() => {
         if (icon) icon.textContent = "science";
     };
 
+    const toggleFlapOnBoot = () => {
+        const btn = document.getElementById("toggle-flap-boot-btn");
+        const icon = btn?.querySelector(".material-icons");
+        const statusText = document.getElementById("flap-boot-status-text");
+        const hiddenCheckbox = document.getElementById("FLAP_ON_BOOT");
+
+        if (!btn) return;
+
+        const isCurrentlyEnabled = btn.classList.contains("text-emerald-400");
+
+        if (isCurrentlyEnabled) {
+            btn.classList.remove("text-emerald-400");
+            btn.classList.add("text-white");
+            if (statusText) statusText.textContent = "Disabled";
+            if (hiddenCheckbox) hiddenCheckbox.checked = false;
+        } else {
+            btn.classList.remove("text-white");
+            btn.classList.add("text-emerald-400");
+            if (statusText) statusText.textContent = "Enabled";
+            if (hiddenCheckbox) hiddenCheckbox.checked = true;
+        }
+
+        if (icon) icon.textContent = "waving_hand";
+    };
+
     const toggleFullscreenLog = () => {
         const icon = document.getElementById("fullscreen-icon");
         const isFullscreen = elements.logContainer.classList.toggle("log-fullscreen");
@@ -434,6 +459,9 @@ const LogPanel = (() => {
                 const toggleRCVersionsBtn = document.getElementById("toggle-rc-versions-btn");
                 const icon = toggleRCVersionsBtn?.querySelector(".material-icons");
                 const statusText = document.getElementById("rc-versions-status-text");
+                const toggleFlapBootBtn = document.getElementById("toggle-flap-boot-btn");
+                const flapIcon = toggleFlapBootBtn?.querySelector(".material-icons");
+                const flapStatusText = document.getElementById("flap-boot-status-text");
                 
                 if (toggleRCVersionsBtn) {
                     const isEnabled = data.SHOW_RC_VERSIONS === 'True' || data.SHOW_RC_VERSIONS === true;
@@ -452,6 +480,24 @@ const LogPanel = (() => {
                     if (icon) icon.textContent = "science";
                     if (statusText) statusText.textContent = isEnabled ? "Enabled" : "Disabled";
                 }
+
+                if (toggleFlapBootBtn) {
+                    const isEnabled = data.FLAP_ON_BOOT === 'True' || data.FLAP_ON_BOOT === true;
+                    const hiddenCheckbox = document.getElementById("FLAP_ON_BOOT");
+
+                    if (isEnabled) {
+                        toggleFlapBootBtn.classList.remove("text-white");
+                        toggleFlapBootBtn.classList.add("text-emerald-400");
+                        if (hiddenCheckbox) hiddenCheckbox.checked = true;
+                    } else {
+                        toggleFlapBootBtn.classList.remove("text-emerald-400");
+                        toggleFlapBootBtn.classList.add("text-white");
+                        if (hiddenCheckbox) hiddenCheckbox.checked = false;
+                    }
+
+                    if (flapIcon) flapIcon.textContent = "waving_hand";
+                    if (flapStatusText) flapStatusText.textContent = isEnabled ? "Enabled" : "Disabled";
+                }
             })
             .catch(err => console.error('Failed to load RC versions setting:', err));
 
@@ -459,6 +505,11 @@ const LogPanel = (() => {
         const toggleRCVersionsBtn = document.getElementById("toggle-rc-versions-btn");
         if (toggleRCVersionsBtn) {
             toggleRCVersionsBtn.addEventListener('click', toggleShowRCVersions);
+        }
+
+        const toggleFlapBootBtn = document.getElementById("toggle-flap-boot-btn");
+        if (toggleFlapBootBtn) {
+            toggleFlapBootBtn.addEventListener('click', toggleFlapOnBoot);
         }
 
         // Handle password change modal and button visibility
@@ -473,5 +524,3 @@ const LogPanel = (() => {
 
 // Make LogPanel available globally
 window.LogPanel = LogPanel;
-
-

@@ -536,6 +536,25 @@
             </h3>
 
             <div class="space-y-4">
+                <!-- Startup flap animation -->
+                <div class="flex items-center justify-between p-3">
+                    <div class="flex items-center gap-3">
+                        <div>
+                            <div class="text-white font-medium text-sm">Startup flap animation</div>
+                            <div class="text-xs text-zinc-400">Play the flap animation when Billy boots</div>
+                        </div>
+                    </div>
+                    <button id="toggle-flap-boot-btn"
+                            type="button"
+                            class="hover:bg-zinc-700 transition-all text-white text-sm py-2 px-4 rounded flex gap-2 items-center cursor-pointer"
+                            title="Toggle startup flap animation">
+                        <span class="material-icons">waving_hand</span>
+                        <span id="flap-boot-status-text">Disabled</span>
+                    </button>
+                    <!-- Hidden checkbox for form submission -->
+                    <input type="checkbox" id="FLAP_ON_BOOT" name="FLAP_ON_BOOT" class="hidden" value="True">
+                </div>
+
                 <!-- UI Animations -->
                 <div class="flex items-center justify-between p-3">
                     <div class="flex items-center gap-3">

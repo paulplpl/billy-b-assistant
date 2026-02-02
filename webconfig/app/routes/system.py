@@ -10,7 +10,7 @@ from dotenv import find_dotenv, set_key
 from flask import Blueprint, jsonify, render_template, request
 from packaging.version import parse as parse_version
 
-from ..core_imports import core_config
+from ..core_imports import core_config, voice_provider_registry
 from ..state import (
     PROJECT_ROOT,
     RELEASE_NOTE,
@@ -58,6 +58,7 @@ CONFIG_KEYS = [
     "DEFAULT_USER",
     "CURRENT_USER",
     "SHOW_RC_VERSIONS",
+    "FLAP_ON_BOOT",
 ]
 
 
@@ -215,19 +216,10 @@ def get_config():
     # Get basic configuration
     config_data = {k: str(getattr(core_config, k, "")) for k in CONFIG_KEYS}
 
-    # Add voice options
-    config_data["VOICE_OPTIONS"] = [
-        "alloy",
-        "ash",
-        "ballad",
-        "coral",
-        "echo",
-        "sage",
-        "shimmer",
-        "verse",
-        "marin",
-        "cedar",
-    ]
+    # Add voice options from the current provider
+    current_provider = voice_provider_registry.get_provider()
+    voices = current_provider.get_supported_voices()
+    config_data["VOICE_OPTIONS"] = voices
 
     # Add user profile information
     try:

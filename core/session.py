@@ -8,19 +8,18 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
-import websockets.asyncio.client
 import websockets.exceptions
 
 from . import audio
+from .base_tools import get_base_tools, get_user_tools
 from .config import (
     CHUNK_MS,
     DEBUG_MODE,
     DEBUG_MODE_INCLUDE_DELTA,
     INSTRUCTIONS,
     MIC_TIMEOUT_SECONDS,
-    OPENAI_API_KEY,
-    OPENAI_MODEL,
     PERSONALITY,
+    REALTIME_AI_PROVIDER,
     RUN_MODE,
     SERVER_VAD_PARAMS,
     SILENCE_THRESHOLD,
@@ -36,6 +35,7 @@ from .mqtt import mqtt_publish
 from .persona import update_persona_ini
 from .persona_manager import persona_manager
 from .profile_manager import user_manager
+from .realtime_ai_provider import voice_provider_registry
 from .song_manager import song_manager
 
 
@@ -57,7 +57,6 @@ def get_instructions_with_user_context():
     # Get current user context
     current_user = user_manager.get_current_user()
     user_section = ""
-    persona_section = ""
 
     # Modify instructions based on guest mode
     if current_user_env and current_user_env.lower() == "guest":
@@ -205,183 +204,25 @@ def get_tools_for_current_mode():
         f"🔧 get_tools_for_current_mode: CURRENT_USER='{current_user_env}'", "🔧"
     )
 
-    base_tools = [
-        {
-            "name": "update_personality",
-            "type": "function",
-            "description": "Adjusts Billy's personality traits. Accepts numeric values (0-100) or level names (min/low/med/high/max). Call this function when users request personality changes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    **{
-                        trait: {
-                            "oneOf": [
-                                {"type": "integer", "minimum": 0, "maximum": 100},
-                                {
-                                    "type": "string",
-                                    "enum": ["min", "low", "med", "high", "max"],
-                                },
-                            ]
-                        }
-                        for trait in vars(PERSONALITY)
-                    }
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "play_song",
-            "type": "function",
-            "description": _get_dynamic_song_description(),
-            "parameters": {
-                "type": "object",
-                "properties": {"song": {"type": "string"}},
-                "required": ["song"],
-            },
-        },
-        {
-            "name": "smart_home_command",
-            "type": "function",
-            "description": "Send a DIRECT command to Home Assistant (e.g., 'Turn on lights', 'Set temperature to 72'). **CRITICAL: Only call this for DIRECT commands. If the user asks you to ASK/CHECK/CONFIRM first (e.g., 'ask if lights should be on'), do NOT call this function - just speak the question and wait for their answer.**",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "The DIRECT command to send to Home Assistant (not a question)",
-                    }
-                },
-                "required": ["prompt"],
-            },
-        },
-        {
-            "name": "follow_up_intent",
-            "type": "function",
-            "description": "**MANDATORY: MUST CALL AFTER EVERY RESPONSE**. Call at the end of your turn to indicate if you expect a user reply. Set expects_follow_up=true for questions, false for statements. **CRITICAL: NEVER call this as your ONLY response - you MUST generate spoken audio first, then call this function. If audio is unclear, say 'I didn't catch that' before calling this.**",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expects_follow_up": {"type": "boolean"},
-                    "suggested_prompt": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["expects_follow_up"],
-            },
-        },
-        {
-            "name": "identify_user",
-            "type": "function",
-            "description": "Call this ONLY when someone explicitly introduces themselves by stating their own name (e.g., 'I am Tom', 'My name is Sarah', 'Hey billy it is tom'). Do NOT call this when someone greets you by name (like 'Hello Billy' or 'Hey Billy'). Only call when they are telling you their own name to switch from guest mode to user mode. IMPORTANT: If you're uncertain about the spelling of a name (e.g., 'Thom' vs 'Tom', 'Sarah' vs 'Sara'), set confidence to 'low' to trigger spelling confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name the user provided",
-                    },
-                    "confidence": {
-                        "type": "string",
-                        "enum": ["high", "medium", "low"],
-                        "description": "How confident you are about the name spelling",
-                    },
-                    "context": {
-                        "type": "string",
-                        "description": "Any additional context about how they introduced themselves",
-                    },
-                },
-                "required": ["name", "confidence"],
-            },
-        },
-    ]
+    # Get base tools that work with any provider
+    tools = get_base_tools()
 
     # Add user-specific tools only if not in guest mode
     # BUT always include identify_user so Billy can switch from guest to user mode
     if not (current_user_env and current_user_env.lower() == "guest"):
         logger.info("🔧 get_tools_for_current_mode: Adding user-specific tools", "🔧")
-        user_tools = [
-            {
-                "name": "store_memory",
-                "type": "function",
-                "description": "Store lasting preferences, facts, and interests that users VOLUNTARILY share. **CRITICAL: DO NOT STORE answers to YOUR OWN questions!** If you just asked a question, the answer is NOT a memory. Store ONLY when: (1) User volunteers info unprompted, OR (2) Info is NOT answering your question. Examples: WRONG: You: 'What cheese?' User: 'Gruyère' -> DO NOT STORE (answering your question). CORRECT: User: 'I love Gruyère cheese' -> DO STORE (volunteered). Call BEFORE responding with speech when appropriate.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "memory": {
-                            "type": "string",
-                            "description": "The memory or fact to store about the user",
-                        },
-                        "importance": {
-                            "type": "string",
-                            "enum": ["high", "medium", "low"],
-                            "description": "How important this memory is",
-                        },
-                        "category": {
-                            "type": "string",
-                            "enum": [
-                                "preference",
-                                "fact",
-                                "event",
-                                "relationship",
-                                "interest",
-                            ],
-                            "description": "Category of the memory",
-                        },
-                    },
-                    "required": ["memory", "importance", "category"],
-                },
-            },
-            {
-                "name": "manage_profile",
-                "type": "function",
-                "description": "Manage user profile settings and preferences",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "enum": ["create", "update", "switch_persona", "get_info"],
-                            "description": "Action to perform on the profile",
-                        },
-                        "preferred_persona": {
-                            "type": "string",
-                            "description": "User's preferred Billy personality",
-                        },
-                        "notes": {
-                            "type": "string",
-                            "description": "Additional notes about the user",
-                        },
-                    },
-                    "required": ["action"],
-                },
-            },
-            {
-                "name": "switch_persona",
-                "type": "function",
-                "description": "Switch Billy's persona mid-session and acknowledge the change",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "persona": {
-                            "type": "string",
-                            "description": "The persona to switch to",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "Optional reason for the persona switch",
-                        },
-                    },
-                    "required": ["persona"],
-                },
-            },
-        ]
-        base_tools.extend(user_tools)
+        tools.extend(get_user_tools())
     else:
         logger.info(
             "🔧 get_tools_for_current_mode: Guest mode - not adding user-specific tools",
             "🔧",
         )
 
-    return base_tools
+    # Add provider-specific tools
+    provider_tools = voice_provider_registry.get_provider().get_provider_tools()
+    tools.extend(provider_tools)
+
+    return tools
 
 
 class BillySession:
@@ -389,11 +230,16 @@ class BillySession:
         self,
         interrupt_event=None,
         *,
+        conversation_provider=None,
         kickoff_text: str | None = None,
         kickoff_kind: str = "literal",  # "literal" | "prompt" | "raw"
         kickoff_to_interactive: bool = False,  # immediately open-mic after kickoff
         autofollowup: str = "auto",  # "auto" | "never" | "always"
     ):
+        self.realtime_ai_provider = (
+            conversation_provider
+            or voice_provider_registry.get_provider(REALTIME_AI_PROVIDER)
+        )
         self.ws = None
         self.ws_lock: asyncio.Lock = asyncio.Lock()
         self.loop = None
@@ -452,7 +298,7 @@ class BillySession:
         """
         async with self.ws_lock:
             if self.ws is not None:
-                await self.ws.send(json.dumps(payload))
+                await self.realtime_ai_provider.send_message(self.ws, payload)
 
     # ---- Message type constants ----------------------------------------
     AUDIO_OUT_TYPES = {
@@ -538,7 +384,7 @@ class BillySession:
             self.user_spoke_after_assistant = False
         # Don't log individual deltas - they're too verbose
         # Just print to console for real-time display
-        print(data.get("delta", ""), end="", flush=True)
+        # print(data.get("delta", ""), end="", flush=True)
         self.full_response_text += data.get("delta", "")
 
     def _on_tool_args_delta(self, data: dict[str, Any]):
@@ -547,15 +393,39 @@ class BillySession:
             self._tool_args_buffer.setdefault(name, "")
             self._tool_args_buffer[name] += data.get("arguments", "")
 
-    async def _handle_follow_up_intent(self, raw_args: str | None):
+    def _parse_json_args(self, raw_args: str | None, tool_name: str) -> dict:
+        """Parse JSON arguments with fallback for malformed JSON."""
         raw_args = raw_args or "{}"
         try:
-            args = json.loads(raw_args)
+            return json.loads(raw_args)
         except Exception as e:
-            logger.warning(
-                f"follow_up_intent: failed to parse arguments: {e} | raw={raw_args!r}"
-            )
-            args = {}
+            # Try to fix common JSON issues
+            try:
+                import re
+
+                fixed_json = raw_args
+                # Fix malformed JSON where colon appears inside quoted key: {"key:value"} -> {"key": "value"}
+                fixed_json = re.sub(
+                    r'{"([^"]*):([^"}]*)([}])', r'{"\1": \2\3', fixed_json
+                )
+                # Handle boolean values
+                fixed_json = re.sub(r':(true|false)([},])', r': \1\2', fixed_json)
+                args = json.loads(fixed_json)
+                logger.info(
+                    f"{tool_name}: fixed malformed JSON | original={raw_args!r} | fixed={fixed_json!r}",
+                    "🔧",
+                )
+                return args
+            except Exception as fix_e:
+                logger.warning(
+                    f"{tool_name}: failed to parse arguments: {e} | raw={raw_args!r} | fix also failed: {fix_e}"
+                )
+                return {}
+
+    async def _handle_conversation_state(
+        self, raw_args: str | None, call_id: str | None = None
+    ):
+        args = self._parse_json_args(raw_args, "conversation_state")
 
         self.follow_up_expected = bool(args.get("expects_follow_up", False))
         self.follow_up_prompt = args.get("suggested_prompt") or None
@@ -564,7 +434,7 @@ class BillySession:
 
         if DEBUG_MODE:
             logger.verbose(
-                f"follow_up_intent | expects_follow_up={self.follow_up_expected}"
+                f"conversation_state | expects_follow_up={self.follow_up_expected}"
                 f" | suggested_prompt={self.follow_up_prompt!r}"
                 f" | reason={reason!r}",
                 "🧭",
@@ -573,7 +443,7 @@ class BillySession:
     async def _handle_update_personality(
         self, raw_args: str | None, call_id: str | None = None
     ):
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "update_personality")
         changes = []
 
         # Get current persona file path
@@ -680,7 +550,7 @@ class BillySession:
             logger.info("🔧 response.create sent successfully", "🔧")
 
     async def _handle_play_song(self, raw_args: str | None):
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "play_song")
         song_name = args.get("song")
         if song_name:
             logger.info(f"Assistant requested to play song: {song_name}", "🎵")
@@ -691,7 +561,7 @@ class BillySession:
     async def _handle_smart_home_command(
         self, raw_args: str | None, call_id: str | None = None
     ):
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "smart_home_command")
         prompt = args.get("prompt")
         if not prompt:
             return
@@ -700,10 +570,9 @@ class BillySession:
         speech_text = None
         if isinstance(ha_response, dict):
             speech_text = ha_response.get("speech", {}).get("plain", {}).get("speech")
-
-        if speech_text:
-            logger.verbose(f"HA debug: {ha_response.get('data')}", "🔍")
-            print(f"\n📣 Home Assistant says: {speech_text}")
+            if speech_text:
+                logger.verbose(f"HA debug: {ha_response.get('data')}", "🔍")
+                print(f"\n📣 Home Assistant says: {speech_text}")
 
             # First, send function_call_output to close the smart_home_command function
             if call_id:
@@ -789,11 +658,11 @@ class BillySession:
         name = data.get("name")
         raw_args = data.get("arguments")
         call_id = data.get("call_id")
-        if not raw_args:
+        if not raw_args and name:
             raw_args = self._tool_args_buffer.pop(name, "{}")
 
-        if name == "follow_up_intent":
-            await self._handle_follow_up_intent(raw_args)
+        if name == "conversation_state":
+            await self._handle_conversation_state(raw_args, call_id)
             return
         if name == "update_personality":
             await self._handle_update_personality(raw_args, call_id)
@@ -828,7 +697,7 @@ class BillySession:
 
         if not TEXT_ONLY_MODE:
             await asyncio.to_thread(audio.playback_queue.join)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.3)
             if len(self.audio_buffer) > 0:
                 logger.verbose(
                     f"Saving audio buffer ({len(self.audio_buffer)} bytes)", "💾"
@@ -1110,49 +979,13 @@ class BillySession:
 
         async with self.ws_lock:
             if self.ws is None:
-                uri = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                }
-
                 try:
-                    self.ws = await websockets.asyncio.client.connect(
-                        uri, additional_headers=headers
-                    )
-                    await self.ws.send(
-                        json.dumps({
-                            "type": "session.update",
-                            "session": {
-                                "type": "realtime",
-                                "instructions": get_instructions_with_user_context(),
-                                "tools": get_tools_for_current_mode(),
-                                "audio": {
-                                    "input": {
-                                        "format": {"type": "audio/pcm", "rate": 24000},
-                                        "turn_detection": {
-                                            "type": "server_vad",
-                                            **SERVER_VAD_PARAMS[TURN_EAGERNESS],
-                                            "create_response": True,
-                                            "interrupt_response": True,
-                                        },
-                                    },
-                                    **(
-                                        {
-                                            "output": {
-                                                "format": {
-                                                    "type": "audio/pcm",
-                                                    "rate": 24000,
-                                                },
-                                                "voice": persona_manager.get_current_persona_voice(),
-                                                "speed": 1.0,
-                                            }
-                                        }
-                                        if not TEXT_ONLY_MODE
-                                        else {}
-                                    ),
-                                },
-                            },
-                        })
+                    self.ws = await self.realtime_ai_provider.connect(
+                        instructions=get_instructions_with_user_context(),
+                        tools=get_tools_for_current_mode(),
+                        server_vad_params=SERVER_VAD_PARAMS[TURN_EAGERNESS],
+                        text_only_mode=TEXT_ONLY_MODE,
+                        voice=persona_manager.get_current_persona_voice(),
                     )
 
                     # Kickoff message (from MQTT say)
@@ -1165,14 +998,15 @@ class BillySession:
                                 "Maintain personality, but do NOT rephrase or expand.\n\n"
                                 f"Repeat this literal message sent via MQTT: {self.kickoff_text}"
                                 "\n\n"
-                                "After you finish speaking, call `follow_up_intent` once. "
+                                "After you finish speaking, call `conversation_state` once. "
                                 "If the line is not a question and needs no reply, set expects_follow_up=false."
                             )
                         else:
                             kickoff_payload = self.kickoff_text
 
-                        await self.ws.send(
-                            json.dumps({
+                        await self.realtime_ai_provider.send_message(
+                            self.ws,
+                            {
                                 "type": "conversation.item.create",
                                 "item": {
                                     "type": "message",
@@ -1181,9 +1015,11 @@ class BillySession:
                                         {"type": "input_text", "text": kickoff_payload}
                                     ],
                                 },
-                            })
+                            },
                         )
-                        await self.ws.send(json.dumps({"type": "response.create"}))
+                        await self.realtime_ai_provider.send_message(
+                            self.ws, {"type": "response.create"}
+                        )
 
                 except websockets.exceptions.ConnectionClosedError as e:
                     reason = getattr(e, "reason", str(e))
@@ -1268,6 +1104,7 @@ class BillySession:
             if not self.kickoff_text:
                 self._start_mic()
 
+            assert self.ws is not None
             async for message in self.ws:
                 if not self.session_active.is_set():
                     print("🚪 Session marked as inactive, stopping stream loop.")
@@ -1384,6 +1221,8 @@ class BillySession:
             await asyncio.sleep(0.5)
 
     async def post_response_handling(self):
+        if self.full_response_text.strip():
+            print(f"📝 Transcript completed: \"{self.full_response_text.strip()}\"")
         logger.verbose(f"Full response: {self.full_response_text.strip()}", "🧠")
 
         if not self.session_active.is_set():
@@ -1422,7 +1261,7 @@ class BillySession:
 
         if not self._saw_follow_up_call:
             logger.warning(
-                "follow_up_intent not called this turn; using heuristic instead."
+                "conversation_state not called this turn; using heuristic instead."
             )
 
         if wants_follow_up:
@@ -1721,12 +1560,14 @@ class BillySession:
                 elif time_diff.days > 1:
                     recency = "few_days"
                     time_since_last_seen = f"{time_diff.days} days"
-                elif time_diff.hours > 12:
+                elif time_diff.total_seconds() > 12 * 3600:
                     recency = "yesterday"
                     time_since_last_seen = "yesterday"
-                elif time_diff.hours > 2:
+                elif time_diff.total_seconds() > 2 * 3600:
                     recency = "earlier"
-                    time_since_last_seen = f"{time_diff.hours} hours"
+                    time_since_last_seen = (
+                        f"{int(time_diff.total_seconds() / 3600)} hours"
+                    )
                 else:
                     recency = "recent"
                     time_since_last_seen = "recently"
@@ -1757,7 +1598,7 @@ class BillySession:
         self, raw_args: str | None, call_id: str | None = None
     ):
         """Handle user identification via tool calling."""
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "identify_user")
         name = args.get("name", "").strip().title()
         confidence = args.get("confidence", "medium")
         context = args.get("context", "")
@@ -1863,7 +1704,7 @@ class BillySession:
             logger.warning("🔧 store_memory: No current user found", "🔧")
             return
 
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "store_memory")
         logger.info(f"🔧 store_memory called with raw_args: {raw_args}", "🔧")
         logger.verbose(f"🔧 store_memory parsed args: {args}", "🔧")
 
@@ -1931,7 +1772,7 @@ class BillySession:
 
     async def _handle_manage_profile(self, raw_args: str | None):
         """Handle profile management via tool calling."""
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "manage_profile")
         action = args.get("action", "")
 
         if action == "switch_persona":
@@ -1941,7 +1782,8 @@ class BillySession:
 
                 # Validate persona exists
                 available_personas = persona_manager.get_available_personas()
-                if new_persona not in available_personas:
+                persona_names = [p["name"] for p in available_personas]
+                if new_persona not in persona_names:
                     await self._ws_send_json({
                         "type": "conversation.item.create",
                         "item": {
@@ -1950,7 +1792,7 @@ class BillySession:
                             "content": [
                                 {
                                     "type": "output_text",
-                                    "text": f"Sorry, I don't have a '{new_persona}' persona. Available personas: {', '.join(available_personas)}",
+                                    "text": f"Sorry, I don't have a '{new_persona}' persona. Available personas: {', '.join(persona_names)}",
                                 }
                             ],
                         },
@@ -1999,7 +1841,7 @@ class BillySession:
 
     async def _handle_switch_persona(self, raw_args: str | None):
         """Handle persona switching mid-session."""
-        args = json.loads(raw_args or "{}")
+        args = self._parse_json_args(raw_args, "switch_persona")
         persona_name = args.get("persona", "")
         reason = args.get("reason", "")
 
@@ -2182,10 +2024,8 @@ class BillySession:
             await self._ws_send_json({"type": "session.close"})
 
             # Trigger a new session start
-            from .button import start_new_session
-
+            # Pending: implement session restart logic
             await asyncio.sleep(1)  # Brief pause for graceful shutdown
-            start_new_session()
 
         except Exception as e:
             logger.error(f"Failed to restart session for voice change: {e}")

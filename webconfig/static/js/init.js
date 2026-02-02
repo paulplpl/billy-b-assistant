@@ -69,6 +69,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     PersonaForm.handlePersonaSave();
     PersonaForm.bindPersonaSelector();
     PersonaForm.populatePersonaSelector();
+    PersonaForm.populateVoiceOptions();
     PersonaForm.initPersonaMouthArticulationSlider();
     window.addBackstoryField = PersonaForm.addBackstoryField;
     window.savePersonaAs = PersonaForm.savePersonaAs;
