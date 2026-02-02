@@ -242,7 +242,7 @@ Install required system packages:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-pip libportaudio2 ffmpeg liblgpio-dev liblgpio1
+sudo apt install -y python3-pip libportaudio2 ffmpeg liblgpio-dev liblgpio1 swig
 ```
 
 Create Python virtual environment:
