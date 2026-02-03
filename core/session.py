@@ -20,6 +20,7 @@ from .config import (
     MIC_TIMEOUT_SECONDS,
     PERSONALITY,
     REALTIME_AI_PROVIDER,
+    OPENAI_ONLINE_MODEL,
     RUN_MODE,
     SERVER_VAD_PARAMS,
     SILENCE_THRESHOLD,
@@ -558,6 +559,34 @@ class BillySession:
             await asyncio.sleep(1.0)
             await audio.play_song(song_name, interrupt_event=self.interrupt_event)
 
+    async def _handle_web_lookup(self, raw_args: str | None, call_id: str | None = None):
+        args = self._parse_json_args(raw_args, "web_lookup")
+        query = (args.get("query") or "").strip()
+
+        openai = voice_provider_registry.get_provider("openai")
+        if not openai or not hasattr(openai, "web_lookup"):
+            result_text = "Web lookup isn't available (OpenAI provider not configured)."
+        else:
+            result_text = await openai.web_lookup(query, model=OPENAI_ONLINE_MODEL)
+            if not result_text.strip():
+                result_text = "I couldn't find anything reliable for that."
+
+        # Send function_call_output back to realtime
+        await self._ws_send_json({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": result_text,  # keep it plain; your other tools may JSON.dumps, either works if consistent
+            },
+        })
+
+        # Continue generation
+        await self._ws_send_json({"type": "response.create"})
+        return
+
+
+
     async def _handle_smart_home_command(
         self, raw_args: str | None, call_id: str | None = None
     ):
@@ -686,7 +715,6 @@ class BillySession:
             await self._handle_switch_persona(raw_args)
             return
         if name == "music_command":
-            #Probaly need to create a method.
             args = json.loads(raw_args or "{}")
             payload = {
                 "action": args.get("action"),
@@ -695,8 +723,9 @@ class BillySession:
                 "level": args.get("level"),
             }
             mqtt_publish("billy/music/cmd", json.dumps(payload))        
-
-
+        if name == "web_lookup":
+            await self._handle_web_lookup(raw_args, call_id)
+            return
 
     async def _on_response_done(self, data: dict[str, Any]):
         error = data.get("status_details", {}).get("error")

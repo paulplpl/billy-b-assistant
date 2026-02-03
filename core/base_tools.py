@@ -100,6 +100,18 @@ def get_base_tools() -> list[dict[str, Any]]:
         },
         #New tools
         {
+        "type": "function",
+        "name": "web_lookup",
+        "description": "Fetch up-to-date info from the internet for questions that need current data.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"}
+          },
+          "required": ["query"]
+        }
+        },
+        {
         "name": "music_command",
         "type": "function",
         "description": "Control music playback on Billy via Home Assistant (through MQTT).",
@@ -112,18 +124,6 @@ def get_base_tools() -> list[dict[str, Any]]:
             "level": {"type": "number"}
             },
             "required": ["action"]
-        }
-        },
-        {
-        "name": "web_lookup",
-        "type": "function",
-        "description": "Fetch up-to-date info from the internet for questions that need current data.",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "query": {"type": "string"}
-          },
-          "required": ["query"]
         }
         },
     ]

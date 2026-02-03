@@ -18,7 +18,7 @@ except: #For standalone debugging
 @dataclass
 class VisualizerConfig:
     # Matches billy.ino FFT length
-    audio_samples: int = 64
+    audio_samples: int = 2048  # FFT length (bigger = better frequency resolution; 64 was too small for real bass/vocals)
 
     # Keep real capture rate at 48kHz
     samplerate: int = 48000
@@ -36,17 +36,58 @@ class VisualizerConfig:
     BACKWARD_BODY_TIME: int = 200
     MAX_BODY_TIME: int = 3000
 
-    # billy.ino thresholds (you asked: keep SR=48k and "scale cutoffs accordingly"
-    # In the Arduino code thresholds were compared to magnitudes, not Hz.
-    # We keep these numeric thresholds the same and provide a gain to match magnitudes.
-    VOCAL_FREQ_THRESHOLD: float = 800.0
-    VOCAL_FREQ_MAX_THRESHOLD: float = 3500.0
-    BASS_FREQ_THRESHOLD: float = 1600.0
-    BASS_FREQ_MAX_THRESHOLD: float = 2500.0
+    # Frequency bands (Hz)
+    # - Bass drives tail/head
+    # - Vocals drive mouth (presence band works better than just fundamentals)
+    bass_band_hz: tuple[float, float] = (40.0, 220.0)
 
-    # Magnitude scaling knob: tune once so peaks cross the thresholds
-    bass_gain: float = 2500.0
-    voice_gain: float = 2500.0
+    # Smoothing (EMA). Higher = smoother/less jitter.
+    bass_smooth: float = 0.85
+    vocal_smooth: float = 0.80
+    # For bass-heavy tracks, low-mids (250-700 Hz) often contain bass harmonics that
+    # falsely trigger "vocal". Push the vocal band up to reduce that.
+    vocal_band_hz: tuple[float, float] = (700.0, 3000.0)
+
+    # --- Mouth false-positive suppression (bass-only tracks) ---
+    # Cancel bass harmonic bleed into the vocal band:
+    # vocal_score = max(0, vocal_env - vocal_bleed_cancel * bass_env)
+    vocal_bleed_cancel: float = 0.08
+ 
+    # Also require vocals to not be tiny relative to bass
+    vocal_ratio_gate: float = 0.03
+
+    # --- Body false-positive suppression (vocal-heavy tracks) ---
+    # Only move the body when bass is dominant compared to the vocal band energy.
+    # Higher = calmer tail/head during singing.
+    bass_ratio_gate: float = 1.20
+
+    # Also require vocals to not be tiny relative to bass
+    vocal_ratio_gate: float = 0.03
+
+    # Optional gains (usually keep at 1.0 once bands/thresholds are good)
+    bass_gain: float = 1.0
+    voice_gain: float = 1.0
+
+    # Adaptive thresholds (recommended: works across quiet/loud songs)
+    adaptive_thresholds: bool = True
+
+    # How fast the "noise floor" tracks the signal (EMA). Higher = slower.
+    # Set closer to 1.0 if thresholds jump around too much.
+    noise_smooth: float = 0.97
+
+    # Threshold multipliers relative to estimated noise floor
+    vocal_thresh_mult: float = 2.2
+    vocal_max_mult: float = 3.6
+    bass_thresh_mult: float = 2.0
+    bass_max_mult: float = 3.0
+
+    # Absolute minimum thresholds (guards against near-silence)
+    vocal_min_threshold: float = 0.0006
+    vocal_min_max_threshold: float = 0.0012
+    bass_min_threshold: float = 0.0005
+    bass_min_max_threshold: float = 0.0010
+
+
     # Debug prints (throttled)
     debug: bool = False
     debug_every_s: float = 0.5
@@ -153,9 +194,24 @@ class BillyBassVisualizer:
         # Audio processing
         self._hamming = np.hamming(self.cfg.audio_samples).astype(np.float32)
 
-        # Ring buffer for last 64 mono samples
+        # Ring buffer for last N mono samples
         self._ring = np.zeros(self.cfg.audio_samples, dtype=np.float32)
         self._ring_pos = 0
+
+        # Precompute frequency axis + band masks (rfft bins)
+        self._freqs = np.fft.rfftfreq(self.cfg.audio_samples, d=1.0 / self.cfg.samplerate)
+        b0, b1 = self.cfg.bass_band_hz
+        v0, v1 = self.cfg.vocal_band_hz
+        self._bass_mask = (self._freqs >= b0) & (self._freqs <= b1)
+        self._vocal_mask = (self._freqs >= v0) & (self._freqs <= v1)
+
+        # Smoothed band energies
+        self._bass_env = 0.0
+        self._vocal_env = 0.0
+
+        # Adaptive noise floors (initialize small but non-zero)
+        self._bass_noise = 1e-6
+        self._vocal_noise = 1e-6
 
         # Threading
         self._lock = threading.Lock()
@@ -182,16 +238,72 @@ class BillyBassVisualizer:
     def _ring_snapshot_oldest_to_newest(self) -> np.ndarray:
         return np.roll(self._ring, -self._ring_pos).astype(np.float32, copy=False)
 
-    def _fft_mag_64(self, samples64: np.ndarray) -> np.ndarray:
-        w = samples64 * self._hamming
+    def _fft_mag(self, samples: np.ndarray) -> np.ndarray:
+        w = samples * self._hamming
         spec = np.fft.rfft(w)
         return np.abs(spec).astype(np.float32)
 
-    def _compute_bass_vocal(self, mag: np.ndarray) -> tuple[float, float]:
-        bass = float(np.sum(mag[1:2]))      # bin 1 only
-        vocal = float(np.sum(mag[2:10]))    # bins 2..9 inclusive
-        return bass * self.cfg.bass_gain, vocal * self.cfg.voice_gain
+    def _compute_bass_vocal(self, mag: np.ndarray) -> tuple[float, float, float, float]:
+        # Use power for a more stable "energy" measure
+        power = mag * mag
 
+        bass_e = float(np.sum(power[self._bass_mask]))
+        vocal_e = float(np.sum(power[self._vocal_mask]))
+
+        # Normalize by number of bins so energy doesn't explode when changing FFT size/bands
+        bass_bins = max(1, int(np.count_nonzero(self._bass_mask)))
+        vocal_bins = max(1, int(np.count_nonzero(self._vocal_mask)))
+        bass_e /= bass_bins
+        vocal_e /= vocal_bins
+
+        # Gains (usually leave at 1.0)
+        bass_e *= self.cfg.bass_gain
+        vocal_e *= self.cfg.voice_gain
+
+        # Smooth envelopes
+        self._bass_env = self.cfg.bass_smooth * self._bass_env + (1.0 - self.cfg.bass_smooth) * bass_e
+        self._vocal_env = self.cfg.vocal_smooth * self._vocal_env + (1.0 - self.cfg.vocal_smooth) * vocal_e
+
+        # Update noise floors (adaptive thresholds)
+        # Idea: noise should rise slowly, fall slowly, and not chase peaks too aggressively.
+        # We clamp the update input to avoid noise floor "learning" big transients.
+        if self.cfg.adaptive_thresholds:
+            bn_in = min(self._bass_env, self._bass_noise * 1.5)
+            vn_in = min(self._vocal_env, self._vocal_noise * 1.5)
+            a = self.cfg.noise_smooth
+            self._bass_noise = a * self._bass_noise + (1.0 - a) * max(bn_in, 1e-9)
+            self._vocal_noise = a * self._vocal_noise + (1.0 - a) * max(vn_in, 1e-9)
+
+        # Bass-heavy music can throw lots of harmonics into the "vocal" band.
+        # Suppress mouth false positives by subtracting a small fraction of bass energy
+        # and requiring a minimum vocal/bass ratio.
+        vocal_ratio = self._vocal_env / (self._bass_env + 1e-12)
+        vocal_score = self._vocal_env - (self.cfg.vocal_bleed_cancel * self._bass_env)
+        if vocal_score < 0.0:
+            vocal_score = 0.0
+
+        bass_ratio = self._bass_env / (self._vocal_env + 1e-12)
+        return self._bass_env, vocal_score, vocal_ratio, bass_ratio
+
+    def _current_thresholds(self) -> tuple[float, float, float, float]:
+        """
+        Returns: (bass_thr, bass_max, vocal_thr, vocal_max)
+        """
+        if not self.cfg.adaptive_thresholds:
+            # Fallback to fixed thresholds (use min_* values as the fixed values if you want)
+            return (
+                self.cfg.bass_min_threshold,
+                self.cfg.bass_min_max_threshold,
+                self.cfg.vocal_min_threshold,
+                self.cfg.vocal_min_max_threshold,
+            )
+
+        bass_thr = max(self.cfg.bass_min_threshold, self._bass_noise * self.cfg.bass_thresh_mult)
+        bass_max = max(self.cfg.bass_min_max_threshold, self._bass_noise * self.cfg.bass_max_mult)
+        vocal_thr = max(self.cfg.vocal_min_threshold, self._vocal_noise * self.cfg.vocal_thresh_mult)
+        vocal_max = max(self.cfg.vocal_min_max_threshold, self._vocal_noise * self.cfg.vocal_max_mult)
+        return bass_thr, bass_max, vocal_thr, vocal_max
+ 
     # ----- Phase machines (same behavior as billy.ino) -----
 
     def _talk_loop(self, t: int) -> None:
@@ -248,34 +360,41 @@ class BillyBassVisualizer:
                 self.body_phase = 0
                 self.body_phase_switch_ts = t
 
-    def _update_logic(self, bass: float, vocal: float) -> None:
+    def _update_logic(self, bass: float, vocal_score: float, vocal_ratio: float, bass_ratio: float) -> None:
         t = self._now_ms()
 
         self._talk_loop(t)
         self._move_loop(t)
 
-        if vocal >= self.cfg.VOCAL_FREQ_THRESHOLD and self.talking_phase == 0:
+        bass_thr, bass_max, vocal_thr, vocal_max = self._current_thresholds()
+        mouth_ok = (vocal_ratio >= self.cfg.vocal_ratio_gate)
+        body_ok = (bass_ratio >= self.cfg.bass_ratio_gate) 
+        
+        if mouth_ok and vocal_score >= vocal_thr and self.talking_phase == 0:
             self.talking_phase = 1
             self.talking_phase_switch_ts = t
             self.max_time_mouth_ts = t + self.cfg.MAX_MOUTH_TIME
 
-        elif vocal >= self.cfg.VOCAL_FREQ_MAX_THRESHOLD and t <= self.max_time_mouth_ts:
+        elif mouth_ok and vocal_score >= vocal_max and t <= self.max_time_mouth_ts:
             self.talking_phase_switch_ts = t + self.cfg.OPEN_MOUTH_TIME - 10
 
-        if bass >= self.cfg.BASS_FREQ_THRESHOLD and self.body_phase == 0:
+        if body_ok and bass >= bass_thr and self.body_phase == 0:
             tail = (np.random.randint(1, 10) > 6)
             self.body_phase = 3 if tail else 1
             self.body_phase_switch_ts = t
             self.max_time_body_ts = t + self.cfg.MAX_BODY_TIME
 
-        elif bass >= self.cfg.BASS_FREQ_MAX_THRESHOLD and t <= self.max_time_body_ts:
+        elif body_ok and bass >= bass_max and t <= self.max_time_body_ts:
             self.body_phase_switch_ts = t + self.cfg.FORWARD_BODY_TIME - 10
 
         if self.cfg.debug:
             now = time.monotonic()
             if now - self._last_debug >= self.cfg.debug_every_s:
                 self._last_debug = now
-                logger.debug(f"[viz] bass={bass:.0f} vocal={vocal:.0f} talk={self.talking_phase} body={self.body_phase}")
+                log_string=f"[viz] bass=%.6f vocal_score=%.6f vocal_ratio=%.4f bass_ratio=%.4f | thr(bass=%.6f vocal=%.6f) | noise(bass=%.6f vocal=%.6f) talk=%d body=%d", 
+                bass, vocal_score, vocal_ratio, bass_ratio, bass_thr, vocal_thr, 
+                self._bass_noise, self._vocal_noise, self.talking_phase, self.body_phase
+                logger.debug(log_string)  
 
     def _process_block(self, stereo_block: np.ndarray) -> None:
         """
@@ -285,10 +404,10 @@ class BillyBassVisualizer:
 
         with self._lock:
             self._ring_push(mono)
-            samples64 = self._ring_snapshot_oldest_to_newest()
-            mag = self._fft_mag_64(samples64)
-            bass, vocal = self._compute_bass_vocal(mag)
-            self._update_logic(bass, vocal)
+            samples = self._ring_snapshot_oldest_to_newest()
+            mag = self._fft_mag(samples)
+            bass, vocal_score, vocal_ratio, bass_ratio = self._compute_bass_vocal(mag)
+            self._update_logic(bass, vocal_score, vocal_ratio, bass_ratio)
 
     def _thread_main(self) -> None:
         assert self._reader is not None

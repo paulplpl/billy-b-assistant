@@ -1,8 +1,8 @@
 import json
 from typing import Any, Optional
-
+from openai import OpenAI
 from ..realtime_ai_provider import RealtimeAIProvider
-
+import asyncio
 
 class OpenAIProvider(RealtimeAIProvider):
     def __init__(
@@ -17,6 +17,7 @@ class OpenAIProvider(RealtimeAIProvider):
             self.voice = voice
         else:
             self.voice = self.default_voice
+        self.http_client = OpenAI(api_key=api_key)
 
     @property
     def default_voice(self) -> str:
@@ -88,6 +89,25 @@ class OpenAIProvider(RealtimeAIProvider):
                 raise RuntimeError("No audio data received from OpenAI.")
 
             return audio_bytes
+
+    async def web_lookup(self, query: str, model: str) -> str:
+        query = (query or "").strip()
+        if not query:
+            return ""
+
+        def run():
+            resp = self.http_client.responses.create(
+                model=model,
+                tools=[{"type": "web_search"}],
+                input=(
+                    "Use web search if needed. Be factual and concise. "
+                    "Include dates or versions if relevant.\n"
+                    f"Query: {query}"
+                ),
+            )
+            return resp.output_text or ""
+
+        return await asyncio.to_thread(run)
 
     def get_supported_voices(self) -> list[str]:
         return [

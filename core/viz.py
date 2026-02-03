@@ -17,7 +17,7 @@ except: #For standalone debugging
     import sys
     
 viz = BillyBassVisualizer(
-    cfg=VisualizerConfig(blocksize=1024, debug=True,bass_gain=5500.0,voice_gain=5500.0),
+    cfg=VisualizerConfig(debug=True,bass_gain=0,voice_gain=0,vocal_ratio_gate=0.02),
     arecord_device="loop_capture",
 )
 def start_viz():
